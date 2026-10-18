@@ -27,6 +27,9 @@ export async function installTestWallet(context: BrowserContext, key: Hex) {
       const listeners: Record<string, ((...a: unknown[]) => void)[]> = {};
       const w = window as unknown as Record<string, unknown>;
       let current: string = address;
+      // Starts on Ethereum mainnet so tests exercise the switch to Sepolia.
+      let chainId = "0x1";
+      w.__ctcChainSwitches = 0;
       const provider = {
         isMetaMask: true,
         async request({ method, params }: { method: string; params?: unknown[] }) {
@@ -35,7 +38,13 @@ export async function installTestWallet(context: BrowserContext, key: Hex) {
             case "eth_accounts":
               return current ? [current] : [];
             case "eth_chainId":
-              return "0x66eee"; // Arbitrum Sepolia
+              return chainId;
+            case "wallet_switchEthereumChain": {
+              chainId = (params as { chainId: string }[])[0].chainId;
+              w.__ctcChainSwitches = (w.__ctcChainSwitches as number) + 1;
+              for (const cb of listeners.chainChanged ?? []) cb(chainId);
+              return null;
+            }
             case "personal_sign":
               return (w.__ctcSign as (m: string) => Promise<string>)((params as string[])[0]);
             default:

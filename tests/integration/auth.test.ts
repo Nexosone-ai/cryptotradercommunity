@@ -9,11 +9,12 @@ import { verifyAuditChain } from "@/lib/audit";
 import { testDb } from "../helpers/db";
 
 const DOMAIN = "localhost:3000";
+const SEPOLIA = 11155111;
 const URI = "http://localhost:3000";
 
 async function login(db: Db, pk: `0x${string}`, opts: { acceptTerms?: boolean; referralCode?: string; chainId?: number } = {}) {
   const account = privateKeyToAccount(pk);
-  const { message } = await issueSiweMessage(db, { address: account.address, chainId: opts.chainId ?? 1, domain: DOMAIN, uri: URI });
+  const { message } = await issueSiweMessage(db, { address: account.address, chainId: opts.chainId ?? SEPOLIA, domain: DOMAIN, uri: URI });
   const signature = await account.signMessage({ message });
   return { message, signature, result: signIn(db, { message, signature, expectedDomain: DOMAIN, acceptTerms: opts.acceptTerms ?? true, referralCode: opts.referralCode }) };
 }
@@ -44,7 +45,7 @@ describe("MetaMask (SIWE) sign-in", () => {
 
   it("rejects a wrong domain", async () => {
     const account = privateKeyToAccount(generatePrivateKey());
-    const { message } = await issueSiweMessage(db, { address: account.address, chainId: 1, domain: "evil.example", uri: "https://evil.example" });
+    const { message } = await issueSiweMessage(db, { address: account.address, chainId: SEPOLIA, domain: "evil.example", uri: "https://evil.example" });
     const signature = await account.signMessage({ message });
     await expect(signIn(db, { message, signature, expectedDomain: DOMAIN, acceptTerms: true })).rejects.toThrow(/도메인/);
   });
@@ -52,23 +53,32 @@ describe("MetaMask (SIWE) sign-in", () => {
   it("rejects a signature from a different wallet", async () => {
     const victim = privateKeyToAccount(generatePrivateKey());
     const attacker = privateKeyToAccount(generatePrivateKey());
-    const { message } = await issueSiweMessage(db, { address: victim.address, chainId: 1, domain: DOMAIN, uri: URI });
+    const { message } = await issueSiweMessage(db, { address: victim.address, chainId: SEPOLIA, domain: DOMAIN, uri: URI });
     const signature = await attacker.signMessage({ message });
     await expect(signIn(db, { message, signature, expectedDomain: DOMAIN, acceptTerms: true })).rejects.toThrow(/서명 검증/);
   });
 
   it("rejects a tampered message (chain id swapped)", async () => {
     const account = privateKeyToAccount(generatePrivateKey());
-    const { message } = await issueSiweMessage(db, { address: account.address, chainId: 1, domain: DOMAIN, uri: URI });
-    const tampered = message.replace("Chain ID: 1", "Chain ID: 42161");
+    const { message } = await issueSiweMessage(db, { address: account.address, chainId: SEPOLIA, domain: DOMAIN, uri: URI });
+    const tampered = message.replace(`Chain ID: ${SEPOLIA}`, "Chain ID: 42161");
     const signature = await account.signMessage({ message: tampered });
     await expect(signIn(db, { message: tampered, signature, expectedDomain: DOMAIN, acceptTerms: true })).rejects.toThrow();
+  });
+
+  it("issues login messages only for the configured wallet chain (testnet: Ethereum Sepolia)", async () => {
+    const account = privateKeyToAccount(generatePrivateKey());
+    await expect(issueSiweMessage(db, { address: account.address, chainId: 1, domain: DOMAIN, uri: URI })).rejects.toMatchObject({
+      code: "WRONG_CHAIN",
+    });
+    const { message } = await issueSiweMessage(db, { address: account.address, chainId: SEPOLIA, domain: DOMAIN, uri: URI });
+    expect(message).toContain("Chain ID: 11155111");
   });
 
   it("rejects an expired nonce", async () => {
     const account = privateKeyToAccount(generatePrivateKey());
     const past = new Date(Date.now() - 60 * 60 * 1000);
-    const { message } = await issueSiweMessage(db, { address: account.address, chainId: 1, domain: DOMAIN, uri: URI }, past);
+    const { message } = await issueSiweMessage(db, { address: account.address, chainId: SEPOLIA, domain: DOMAIN, uri: URI }, past);
     const signature = await account.signMessage({ message });
     await expect(signIn(db, { message, signature, expectedDomain: DOMAIN, acceptTerms: true })).rejects.toThrow(/만료/);
   });

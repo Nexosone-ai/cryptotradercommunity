@@ -1,4 +1,5 @@
 import { getAddress, isAddress } from "viem";
+import { DEFAULT_WALLET_CHAIN, WALLET_CHAINS } from "./chains";
 
 /**
  * Server configuration. Every value has a safe default so a missing variable
@@ -36,8 +37,12 @@ export function getConfig() {
     0,
     HL_MAX_PERP_BUILDER_FEE_TENTHS_BP,
   );
+  const walletChainId = intEnv("WALLET_CHAIN_ID", DEFAULT_WALLET_CHAIN[network], 1, Number.MAX_SAFE_INTEGER);
+  if (!WALLET_CHAINS[walletChainId]) throw new Error(`WALLET_CHAIN_ID ${walletChainId} is not a supported wallet chain`);
   return {
     appUrl,
+    /** EVM chain the wallet must be on for login and Hyperliquid approvals. */
+    walletChain: WALLET_CHAINS[walletChainId],
     network,
     isMainnet: network === "mainnet",
     /** Mainnet orders need both the network and an explicit opt-in flag. */
@@ -60,6 +65,7 @@ export function getPublicConfig() {
   const c = getConfig();
   return {
     network: c.network,
+    walletChain: c.walletChain,
     mainnetTradingEnabled: c.mainnetTradingEnabled,
     builderAddress: c.builderAddress,
     platformMaxFeeTenthsBp: c.platformMaxFeeTenthsBp,

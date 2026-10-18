@@ -6,7 +6,7 @@ import { useState } from "react";
 import { shortAddress } from "@/lib/format";
 import { buttonClass, cx } from "./ui";
 import { ConnectModal } from "./wallet/ConnectModal";
-import { useWallet } from "./wallet/WalletProvider";
+import { ensureWalletChain, useWallet } from "./wallet/WalletProvider";
 
 // Public menu only. /partner and /admin are intentionally not linked here;
 // they are protected by server-side role checks regardless.
@@ -23,6 +23,8 @@ export function SiteHeader() {
   const w = useWallet();
   const [menu, setMenu] = useState(false);
   const network = w.me?.config.network ?? "testnet";
+  const walletChain = w.me?.config.walletChain;
+  const wrongChain = Boolean(w.me?.user && walletChain && w.chainId && w.chainId !== walletChain.id);
 
   return (
     <>
@@ -37,9 +39,10 @@ export function SiteHeader() {
             "rounded border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider",
             network === "mainnet" ? "border-down/60 text-down" : "border-warn/60 text-warn",
           )}
-          title="Hyperliquid 네트워크"
+          title={`Hyperliquid ${network} · 지갑 네트워크 ${walletChain?.name ?? ""}`}
         >
           {network === "mainnet" ? "Mainnet" : "Testnet"}
+          {walletChain && <span className="ml-1 hidden font-medium normal-case tracking-normal sm:inline">· {walletChain.name}</span>}
         </span>
         <nav className="ml-4 hidden items-center gap-1 lg:flex">
           {NAV.map((n) => (
@@ -83,6 +86,20 @@ export function SiteHeader() {
             </Link>
           ))}
         </nav>
+      )}
+      {wrongChain && walletChain && (
+        <div className="border-t border-warn/40 bg-warn/10 px-4 py-2 text-center text-sm text-warn">
+          지갑이 다른 네트워크(chain {w.chainId})에 연결되어 있습니다. 서명하려면 {walletChain.name}이 필요합니다.{" "}
+          <button
+            className="underline"
+            onClick={() => {
+              const provider = w.getProvider();
+              if (provider) void ensureWalletChain(provider, walletChain).catch(() => {});
+            }}
+          >
+            {walletChain.name}로 전환
+          </button>
+        </div>
       )}
       {w.notice && (
         <div className="border-t border-warn/40 bg-warn/10 px-4 py-2 text-center text-sm text-warn">

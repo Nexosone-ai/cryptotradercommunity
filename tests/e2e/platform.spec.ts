@@ -44,6 +44,9 @@ test("no email/password login; MetaMask sign-in and logout work", async ({ brows
   await expect(page.locator('input[type="password"], input[type="email"]')).toHaveCount(0);
   await signInViaUi(page);
   await expect(page.getByRole("link", { name: new RegExp(account.address.slice(0, 6)) })).toBeVisible();
+  // The wallet was asked to switch to Ethereum Sepolia before signing.
+  expect(await page.evaluate(() => (window as unknown as { __ctcChainSwitches: number }).__ctcChainSwitches)).toBe(1);
+  expect(await page.evaluate(() => (window as unknown as { ethereum: { request(a: object): Promise<string> } }).ethereum.request({ method: "eth_chainId" }))).toBe("0xaa36a7");
   const me = await (await page.request.get("/api/me")).json();
   expect(me.user.walletAddress).toBe(account.address.toLowerCase());
   await page.getByRole("button", { name: "로그아웃" }).click();

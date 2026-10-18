@@ -2,17 +2,24 @@
 
 import { ExchangeClient, HttpTransport } from "@nktkas/hyperliquid";
 import { createWalletClient, custom } from "viem";
-import type { Eip1193Provider } from "@/components/wallet/WalletProvider";
+import { ensureWalletChain, type Eip1193Provider } from "@/components/wallet/WalletProvider";
+import type { WalletChain } from "@/lib/chains";
 
 /**
  * Exchange client signed by the user's own MetaMask wallet. Used only for
  * user-signed actions that must come from the main wallet: approveBuilderFee
  * and approveAgent. Orders are signed by the approved agent on the server.
- * The EIP-712 signatureChainId follows the wallet's active chain.
+ * The wallet is switched to the configured chain first and that chain is used
+ * as the EIP-712 signatureChainId (testnet: Ethereum Sepolia).
  */
-export function userExchange(provider: Eip1193Provider, address: string, network: "testnet" | "mainnet") {
+export async function userExchange(provider: Eip1193Provider, address: string, network: "testnet" | "mainnet", chain: WalletChain) {
+  await ensureWalletChain(provider, chain);
   const wallet = createWalletClient({ account: address as `0x${string}`, transport: custom(provider) });
-  return new ExchangeClient({ transport: new HttpTransport({ isTestnet: network === "testnet" }), wallet });
+  return new ExchangeClient({
+    transport: new HttpTransport({ isTestnet: network === "testnet" }),
+    wallet,
+    signatureChainId: chain.hex,
+  });
 }
 
 export function hlErrorMessage(err: unknown): string {

@@ -35,7 +35,7 @@ export function PermissionsPanel({ config, perms, onChange }: { config: PublicCo
         method: "POST",
         body: { requiredTenthsBp: rate },
       });
-      await userExchange(provider, address, config.network).approveBuilderFee({ builder: ch.builder, maxFeeRate: ch.maxFeeRate });
+      await (await userExchange(provider, address, config.network, config.walletChain)).approveBuilderFee({ builder: ch.builder, maxFeeRate: ch.maxFeeRate });
       await apiFetch("/api/fees/approval");
       onChange();
     } catch (e) {
@@ -52,7 +52,7 @@ export function PermissionsPanel({ config, perms, onChange }: { config: PublicCo
     setError(null);
     try {
       const a = await apiFetch<{ agentAddress: `0x${string}`; agentName: string }>("/api/trading/agent", { method: "POST", body: {} });
-      await userExchange(provider, address, config.network).approveAgent({ agentAddress: a.agentAddress, agentName: a.agentName });
+      await (await userExchange(provider, address, config.network, config.walletChain)).approveAgent({ agentAddress: a.agentAddress, agentName: a.agentName });
       await apiFetch("/api/trading/agent/verify", { method: "POST", body: {} });
       onChange();
     } catch (e) {

@@ -16,7 +16,7 @@ export function ConnectModal() {
   const hasProvider = typeof window !== "undefined" && Boolean(w.getProvider());
   const mobile = isMobileBrowser();
   const busy = w.status !== "idle";
-  const step = { idle: "", connecting: "MetaMask 계정 연결 중…", signing: "MetaMask에서 로그인 메시지에 서명해 주세요…", verifying: "서명 확인 중…" }[w.status];
+  const step = { idle: "", connecting: "MetaMask 계정·네트워크 확인 중…", signing: "MetaMask에서 로그인 메시지에 서명해 주세요…", verifying: "서명 확인 중…" }[w.status];
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/80 sm:items-center" role="dialog" aria-modal="true" aria-labelledby="connect-title">
@@ -33,6 +33,11 @@ export function ConnectModal() {
           <li>• 이메일·비밀번호 없이 지갑 서명만으로 로그인합니다.</li>
           <li>• 로그인 서명은 <b>거래 권한이나 수수료 승인을 부여하지 않습니다.</b> 가스비도 들지 않습니다.</li>
           <li>• 비밀복구구문(시드)이나 개인키는 절대 요청하지 않습니다.</li>
+          {w.me?.config.walletChain && (
+            <li>
+              • 지갑 네트워크는 <b>{w.me.config.walletChain.name}</b>을(를) 사용합니다. 다른 네트워크면 MetaMask가 전환을 요청합니다.
+            </li>
+          )}
         </ul>
 
         {hasProvider ? (

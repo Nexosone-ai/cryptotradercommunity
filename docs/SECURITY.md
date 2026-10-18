@@ -2,7 +2,7 @@
 
 ## 인증 — MetaMask only
 - EIP-4361(SIWE) 메시지를 **서버가 생성**하고 nonce(128-bit, 1회용, 10분 만료)를 DB에 저장한다. 검증 시 nonce를 원자적으로 소비(`UPDATE … WHERE used_at IS NULL AND expires_at > now() RETURNING`)하므로 재전송·동시 재사용이 불가하다.
-- 서명된 메시지는 발급 원문과 **바이트 단위로 일치**해야 하며(도메인·URI·체인ID·주소 교체 방지), 도메인은 `APP_URL` 호스트와 일치해야 한다. 서명은 `viem.verifyMessage`로 복원 검증.
+- 서명된 메시지는 발급 원문과 **바이트 단위로 일치**해야 하며(도메인·URI·체인ID·주소 교체 방지), 도메인은 `APP_URL` 호스트와, 체인 ID는 `WALLET_CHAIN_ID`(testnet 기본 Ethereum Sepolia)와 일치해야 한다. 서명은 `viem.verifyMessage`로 복원 검증.
 - 세션: 32바이트 랜덤 토큰을 httpOnly·SameSite=Lax·(프로덕션) Secure·`__Host-` 쿠키로 발급, DB에는 HMAC-SHA256(SESSION_SECRET) 해시만 저장. 7일 만료, 로그아웃 시 폐기.
 - 지갑 계정 변경/연결 해제(`accountsChanged`, `disconnect`) 감지 시 즉시 로그아웃.
 - 로그인 서명은 거래 권한이 아니다. Builder Fee 승인과 Agent 승인은 별도 서명.

@@ -4,6 +4,7 @@ import { getAddress, isAddress, verifyMessage, type Hex } from "viem";
 import { createSiweMessage, parseSiweMessage } from "viem/siwe";
 import type { Db } from "../db/client";
 import { authNonces } from "../db/schema";
+import { getConfig } from "../config";
 import { badRequest, unauthorized } from "../http";
 
 const NONCE_TTL_MS = 10 * 60 * 1000;
@@ -21,6 +22,10 @@ export interface NonceRequest {
 export async function issueSiweMessage(db: Db, req: NonceRequest, now = new Date()) {
   if (!isAddress(req.address, { strict: false })) throw badRequest("INVALID_ADDRESS", "지갑 주소가 올바르지 않습니다.");
   if (!Number.isInteger(req.chainId) || req.chainId <= 0) throw badRequest("INVALID_CHAIN", "체인 ID가 올바르지 않습니다.");
+  const chain = getConfig().walletChain;
+  if (req.chainId !== chain.id) {
+    throw badRequest("WRONG_CHAIN", `지갑 네트워크를 ${chain.name}(chain ${chain.id})로 전환해 주세요.`);
+  }
   const nonce = randomBytes(16).toString("hex");
   const expiresAt = new Date(now.getTime() + NONCE_TTL_MS);
   const message = createSiweMessage({

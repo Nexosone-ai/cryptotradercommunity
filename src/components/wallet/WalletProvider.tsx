@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { stringToHex } from "viem";
+import type { WalletChain } from "@/lib/chains";
 import type { PublicConfig } from "@/lib/config";
 import { apiFetch } from "@/lib/client-api";
 
@@ -58,6 +59,35 @@ export function isMobileBrowser() {
 }
 
 /** Opens this page inside the MetaMask mobile in-app browser. */
+/**
+ * Asks the wallet to switch to the required chain, adding it if the wallet
+ * does not know it (EIP-3326 / EIP-3085). Returns the chain id now active.
+ */
+export async function ensureWalletChain(provider: Eip1193Provider, chain: WalletChain): Promise<number> {
+  const current = parseInt((await provider.request({ method: "eth_chainId" })) as string, 16);
+  if (current === chain.id) return current;
+  try {
+    await provider.request({ method: "wallet_switchEthereumChain", params: [{ chainId: chain.hex }] });
+  } catch (err) {
+    if ((err as { code?: number })?.code !== 4902) throw err;
+    await provider.request({
+      method: "wallet_addEthereumChain",
+      params: [
+        {
+          chainId: chain.hex,
+          chainName: chain.name,
+          rpcUrls: [chain.rpcUrl],
+          blockExplorerUrls: [chain.explorerUrl],
+          nativeCurrency: chain.nativeCurrency,
+        },
+      ],
+    });
+  }
+  const after = parseInt((await provider.request({ method: "eth_chainId" })) as string, 16);
+  if (after !== chain.id) throw new Error(`지갑 네트워크를 ${chain.name}로 전환해 주세요.`);
+  return after;
+}
+
 export function metamaskDeepLink() {
   if (typeof window === "undefined") return "https://metamask.io/download/";
   const { host, pathname, search } = window.location;
@@ -152,6 +182,7 @@ export function WalletProvider({ children, initialMe }: { children: ReactNode; i
     };
   }, [getProvider, me?.user, signOut, providerName]);
 
+  const walletChain = me?.config.walletChain;
   const signIn = useCallback(
     async (acceptTerms: boolean) => {
       setError(null);
@@ -165,7 +196,10 @@ export function WalletProvider({ children, initialMe }: { children: ReactNode; i
         const accounts = (await provider.request({ method: "eth_requestAccounts" })) as string[];
         const address = accounts[0];
         if (!address) throw new Error("연결된 계정이 없습니다.");
-        const chain = parseInt((await provider.request({ method: "eth_chainId" })) as string, 16);
+        const required = walletChain;
+        const chain = required
+          ? await ensureWalletChain(provider, required)
+          : parseInt((await provider.request({ method: "eth_chainId" })) as string, 16);
         setChainId(chain);
         const { message } = await apiFetch<{ message: string }>("/api/auth/nonce", {
           method: "POST",
@@ -184,7 +218,7 @@ export function WalletProvider({ children, initialMe }: { children: ReactNode; i
         setStatus("idle");
       }
     },
-    [getProvider, refresh, router],
+    [getProvider, refresh, router, walletChain],
   );
 
   const value = useMemo<WalletCtx>(

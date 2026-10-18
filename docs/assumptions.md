@@ -24,6 +24,13 @@
 | 최소 주문 | 10 USDC 명목가 | 게이트에서 사전 거부 |
 | Testnet | `api.hyperliquid-testnet.xyz`, 212개 perp ✅ | 기본 네트워크 |
 
+## 1-1. 지갑 네트워크 (2026-10-18 결정)
+- 테스트넷 단계의 지갑 네트워크는 **Ethereum Sepolia (chain 11155111)** — 사용자 결정. 메인넷 기본값은 Arbitrum One(42161). `WALLET_CHAIN_ID`로 변경 가능.
+- 이 체인은 *서명용*일 뿐이다: SIWE 로그인 메시지의 Chain ID, Hyperliquid user-signed 액션(approveBuilderFee/approveAgent)의 `signatureChainId`(0xaa36a7). Hyperliquid 테스트넷 거래·잔고는 Hyperliquid L1에 있으며 Sepolia와 무관하다.
+- Hyperliquid 테스트넷이 Sepolia 서명을 받는지 실측: 같은 키로 `signatureChainId` 0xaa36a7 / 0x66eee 모두 서명자 주소가 정확히 복원됨 ✅ (미입금 계정이라 "Must deposit" 응답).
+- **Sepolia ETH/토큰은 Hyperliquid 테스트넷으로 입금되지 않는다.** 테스트넷 USDC는 Hyperliquid testnet faucet(메인넷 입금 이력이 있는 주소 대상) 등으로 별도로 받아야 한다.
+- 서버는 nonce 발급 시 chainId가 설정값과 다르면 `WRONG_CHAIN`으로 거부하고, 클라이언트는 로그인·승인 서명 전에 `wallet_switchEthereumChain`(없으면 `wallet_addEthereumChain`)으로 전환을 요청한다.
+
 ## 2. 요구사항과 다르게(또는 제한적으로) 구현한 부분
 
 1. **"서버 측 주문 범위 제한"은 프로토콜 기능이 아님.** Hyperliquid agent wallet은 주문 종류·금액 범위를 프로토콜 차원에서 제한하지 않는다. 범위 제한은 플랫폼 서버의 주문 게이트(`placeOrder`)가 강제하며, UI·문서에 그렇게 명시했다. 사용자는 Hyperliquid 앱에서 agent를 언제든 제거할 수 있다.
