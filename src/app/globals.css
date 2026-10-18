@@ -1,0 +1,82 @@
+@import "tailwindcss";
+
+/* Trading-terminal dark theme (default). Light theme is a later addition. */
+:root {
+  --bg: #08090b;
+  --panel: #101318;
+  --panel-2: #151a20;
+  --line: #222a33;
+  --line-strong: #2f3944;
+  --text: #e6ebf0;
+  --muted: #8a96a3;
+  --faint: #5c6772;
+  --accent: #19d3c5;
+  --accent-2: #3b82f6;
+  --up: #22c55e;
+  --down: #ef4444;
+  --warn: #f59e0b;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-panel: var(--panel);
+  --color-panel-2: var(--panel-2);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-text: var(--text);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-accent: var(--accent);
+  --color-accent-2: var(--accent-2);
+  --color-up: var(--up);
+  --color-down: var(--down);
+  --color-warn: var(--warn);
+  --font-sans: var(--font-geist-sans), "Pretendard", "Apple SD Gothic Neo", "Malgun Gothic", system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+}
+
+/* Element defaults live in the base layer so utilities (w-auto, etc.) override them. */
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-sans);
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .num {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  input,
+  select,
+  textarea {
+    background: var(--panel-2);
+    border: 1px solid var(--line-strong);
+    border-radius: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    color: var(--text);
+    width: 100%;
+  }
+
+  input[type="checkbox"],
+  input[type="radio"] {
+    width: auto;
+    accent-color: var(--accent);
+  }
+
+  label {
+    font-size: 0.8125rem;
+    color: var(--muted);
+  }
+}
