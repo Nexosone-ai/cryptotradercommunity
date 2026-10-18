@@ -41,13 +41,13 @@ export function SiteHeader() {
         >
           {network === "mainnet" ? "Mainnet" : "Testnet"}
         </span>
-        <nav className="ml-4 hidden items-center gap-1 md:flex">
+        <nav className="ml-4 hidden items-center gap-1 lg:flex">
           {NAV.map((n) => (
             <Link
               key={n.href}
               href={n.href}
               className={cx(
-                "rounded-md px-3 py-1.5 text-sm",
+                "whitespace-nowrap rounded-md px-3 py-1.5 text-sm",
                 pathname.startsWith(n.href) ? "bg-panel-2 text-text" : "text-muted hover:text-text",
               )}
             >
@@ -70,13 +70,13 @@ export function SiteHeader() {
               MetaMask 연결
             </button>
           )}
-          <button className="rounded-md p-2 text-muted md:hidden" onClick={() => setMenu((m) => !m)} aria-label="메뉴" aria-expanded={menu}>
+          <button className="rounded-md p-2 text-muted lg:hidden" onClick={() => setMenu((m) => !m)} aria-label="메뉴" aria-expanded={menu}>
             ☰
           </button>
         </div>
       </div>
       {menu && (
-        <nav className="border-t border-line px-4 py-2 md:hidden">
+        <nav className="border-t border-line px-4 py-2 lg:hidden">
           {NAV.map((n) => (
             <Link key={n.href} href={n.href} onClick={() => setMenu(false)} className="block rounded-md px-2 py-2.5 text-sm text-text">
               {n.label}
