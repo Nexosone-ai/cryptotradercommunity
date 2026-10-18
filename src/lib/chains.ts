@@ -9,11 +9,25 @@ export interface WalletChain {
   hex: `0x${string}`;
   name: string;
   rpcUrl: string;
-  explorerUrl: string;
+  explorerUrl?: string;
   nativeCurrency: { name: string; symbol: string; decimals: number };
 }
 
 export const WALLET_CHAINS: Record<number, WalletChain> = {
+  998: {
+    id: 998,
+    hex: "0x3e6",
+    name: "Hyperliquid Testnet (HyperEVM)",
+    rpcUrl: "https://rpc.hyperliquid-testnet.xyz/evm",
+    nativeCurrency: { name: "HYPE", symbol: "HYPE", decimals: 18 },
+  },
+  999: {
+    id: 999,
+    hex: "0x3e7",
+    name: "Hyperliquid (HyperEVM)",
+    rpcUrl: "https://rpc.hyperliquid.xyz/evm",
+    nativeCurrency: { name: "HYPE", symbol: "HYPE", decimals: 18 },
+  },
   11155111: {
     id: 11155111,
     hex: "0xaa36a7",
@@ -40,5 +54,5 @@ export const WALLET_CHAINS: Record<number, WalletChain> = {
   },
 };
 
-/** Testnet signs on Ethereum Sepolia; mainnet on Arbitrum One. */
-export const DEFAULT_WALLET_CHAIN = { testnet: 11155111, mainnet: 42161 } as const;
+/** Testnet signs on the HyperEVM testnet (998); mainnet on Arbitrum One. */
+export const DEFAULT_WALLET_CHAIN = { testnet: 998, mainnet: 42161 } as const;

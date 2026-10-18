@@ -77,7 +77,7 @@ export async function ensureWalletChain(provider: Eip1193Provider, chain: Wallet
           chainId: chain.hex,
           chainName: chain.name,
           rpcUrls: [chain.rpcUrl],
-          blockExplorerUrls: [chain.explorerUrl],
+          ...(chain.explorerUrl ? { blockExplorerUrls: [chain.explorerUrl] } : {}),
           nativeCurrency: chain.nativeCurrency,
         },
       ],

@@ -27,7 +27,7 @@ DATABASE_URL=postgres://... npm run db:migrate
 | `SESSION_SECRET` | 프로덕션 예 | 32자 이상 랜덤 |
 | `ADMIN_WALLET_ADDRESS` | 예 | 최초 관리자 |
 | `HL_NETWORK` | — | `testnet`(기본) / `mainnet` |
-| `WALLET_CHAIN_ID` | — | 지갑 서명 체인. 기본 testnet=11155111(Ethereum Sepolia), mainnet=42161 |
+| `WALLET_CHAIN_ID` | — | 지갑 서명 체인. 기본 testnet=998(HyperEVM testnet), mainnet=42161 |
 | `MAINNET_TRADING_ENABLED` | — | `true`일 때만 메인넷 주문(+UI 재확인) |
 | `BUILDER_ADDRESS` | 수수료 기능 | 플랫폼 Builder 주소(해당 네트워크 perps ≥ 100 USDC) |
 | `PLATFORM_MAX_BUILDER_FEE_TENTHS_BP` | — | 기본 50 (0.05%) |

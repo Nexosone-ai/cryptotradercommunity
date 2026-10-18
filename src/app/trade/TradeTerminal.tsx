@@ -130,6 +130,15 @@ export function TradeTerminal({ config }: { config: PublicConfig }) {
           {config.network === "mainnet" ? "MAINNET 실거래" : "TESTNET — 실제 자금 아님"}
         </span>
       </div>
+      {config.network === "testnet" && (
+        <p className="text-xs text-muted">
+          테스트넷 USDC는{" "}
+          <a href="https://app.hyperliquid-testnet.xyz/drip" target="_blank" rel="noopener noreferrer" className="text-accent underline">
+            Hyperliquid 테스트넷 faucet
+          </a>
+          에서 받을 수 있습니다 (같은 지갑 주소로 Hyperliquid 메인넷 입금 이력 필요). 지갑 네트워크: {config.walletChain.name}.
+        </p>
+      )}
       {marketErr && <Notice tone="down">{marketErr}</Notice>}
 
       <div className="grid gap-4 lg:grid-cols-[1fr_260px_320px]">

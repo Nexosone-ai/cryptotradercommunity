@@ -10,7 +10,7 @@ import type { WalletChain } from "@/lib/chains";
  * user-signed actions that must come from the main wallet: approveBuilderFee
  * and approveAgent. Orders are signed by the approved agent on the server.
  * The wallet is switched to the configured chain first and that chain is used
- * as the EIP-712 signatureChainId (testnet: Ethereum Sepolia).
+ * as the EIP-712 signatureChainId (testnet: HyperEVM testnet, chain 998).
  */
 export async function userExchange(provider: Eip1193Provider, address: string, network: "testnet" | "mainnet", chain: WalletChain) {
   await ensureWalletChain(provider, chain);

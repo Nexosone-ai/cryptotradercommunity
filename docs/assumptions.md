@@ -25,11 +25,11 @@
 | Testnet | `api.hyperliquid-testnet.xyz`, 212개 perp ✅ | 기본 네트워크 |
 
 ## 1-1. 지갑 네트워크 (2026-10-18 결정)
-- 테스트넷 단계의 지갑 네트워크는 **Ethereum Sepolia (chain 11155111)** — 사용자 결정. 메인넷 기본값은 Arbitrum One(42161). `WALLET_CHAIN_ID`로 변경 가능.
-- 이 체인은 *서명용*일 뿐이다: SIWE 로그인 메시지의 Chain ID, Hyperliquid user-signed 액션(approveBuilderFee/approveAgent)의 `signatureChainId`(0xaa36a7). Hyperliquid 테스트넷 거래·잔고는 Hyperliquid L1에 있으며 Sepolia와 무관하다.
-- Hyperliquid 테스트넷이 Sepolia 서명을 받는지 실측: 같은 키로 `signatureChainId` 0xaa36a7 / 0x66eee 모두 서명자 주소가 정확히 복원됨 ✅ (미입금 계정이라 "Must deposit" 응답).
-- **Sepolia ETH/토큰은 Hyperliquid 테스트넷으로 입금되지 않는다.** 테스트넷 USDC는 Hyperliquid testnet faucet(메인넷 입금 이력이 있는 주소 대상) 등으로 별도로 받아야 한다.
-- 서버는 nonce 발급 시 chainId가 설정값과 다르면 `WRONG_CHAIN`으로 거부하고, 클라이언트는 로그인·승인 서명 전에 `wallet_switchEthereumChain`(없으면 `wallet_addEthereumChain`)으로 전환을 요청한다.
+- 테스트넷 단계의 지갑 네트워크는 **Hyperliquid 테스트넷 HyperEVM (chain 998, RPC `https://rpc.hyperliquid-testnet.xyz/evm`, 가스 HYPE)** — 사용자 결정. 처음엔 Ethereum Sepolia로 설정했으나, Hyperliquid 테스트넷은 Sepolia 자산과 연결되지 않으므로 HyperEVM 테스트넷으로 변경. 메인넷 기본값은 Arbitrum One(42161). `WALLET_CHAIN_ID`로 변경 가능.
+- 이 체인은 *서명용*: SIWE 로그인 메시지의 Chain ID와 Hyperliquid user-signed 액션(approveBuilderFee/approveAgent)의 `signatureChainId`(0x3e6). 거래·잔고(perps USDC)는 HyperCore 테스트넷에 있다.
+- 실측: `signatureChainId` 0x3e6로 서명한 approveAgent에서 Hyperliquid 테스트넷이 서명자 주소를 정확히 복원 ✅ (미입금 계정이라 "Must deposit" 응답). RPC `eth_chainId` = 0x3e6 ✅.
+- 테스트넷 USDC: Hyperliquid 공식 faucet `https://app.hyperliquid-testnet.xyz/drip` — **같은 주소로 Hyperliquid 메인넷에 입금한 이력이 있어야** 1,000 mock USDC를 받을 수 있다(공식 문서 onboarding/testnet-faucet). 주문·승인 전 테스트넷 계정에 USDC가 있어야 한다("Must deposit before performing actions").
+- 서버는 nonce 발급 시 chainId가 설정값과 다르면 `WRONG_CHAIN`으로 거부하고, 클라이언트는 서명 전에 `wallet_switchEthereumChain`(없으면 `wallet_addEthereumChain`)으로 전환·추가를 요청한다.
 
 ## 2. 요구사항과 다르게(또는 제한적으로) 구현한 부분
 

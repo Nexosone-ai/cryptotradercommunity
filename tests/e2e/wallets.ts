@@ -27,7 +27,7 @@ export async function installTestWallet(context: BrowserContext, key: Hex) {
       const listeners: Record<string, ((...a: unknown[]) => void)[]> = {};
       const w = window as unknown as Record<string, unknown>;
       let current: string = address;
-      // Starts on Ethereum mainnet so tests exercise the switch to Sepolia.
+      // Starts on Ethereum mainnet so tests exercise the switch to the HyperEVM testnet.
       let chainId = "0x1";
       w.__ctcChainSwitches = 0;
       const provider = {
