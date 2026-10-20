@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Card, Notice } from "@/components/ui";
 import { getConfig } from "@/lib/config";
 import { feeLabel } from "@/lib/format";
+import { SWAP_FEE_NOTICE, SWAP_RESPONSIBILITY_NOTICE } from "@/lib/swap/notices";
 
 export const metadata: Metadata = { title: "서비스·수수료·보안 문서" };
 
@@ -63,6 +64,17 @@ export default function DocsPage() {
           <li>청산 체결 20건·운영 14일 미만이면 &lsquo;검증 데이터 부족&rsquo;으로 표시하고 수익률·순위를 만들지 않습니다.</li>
           <li>백테스트·자가 보고 실적은 실거래 지표·랭킹과 섞지 않습니다.</li>
         </ul>
+      </section>
+
+      <section id="swap" className="space-y-2">
+        <h2 className="text-lg font-semibold">P2P 스왑</h2>
+        <Notice>
+          {SWAP_FEE_NOTICE} {SWAP_RESPONSIBILITY_NOTICE}
+        </Notice>
+        <p className="text-muted">
+          스왑은 판매자가 정한 고정 가격의 서명 주문을 구매자가 스마트 컨트랙트로 직접 체결하는 이용자 간(P2P) 거래입니다. 플랫폼은 토큰을 보관하거나 거래 상대방이 되지 않으며,
+          가격·토큰·상대방의 확인과 그 결과는 각 이용자의 책임입니다. 네트워크 가스비는 이용자가 지불합니다.
+        </p>
       </section>
 
       <section id="risk" className="space-y-2">

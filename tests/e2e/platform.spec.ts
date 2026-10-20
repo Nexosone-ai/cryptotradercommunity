@@ -225,3 +225,13 @@ test("swap page: 5 chains, locked until a contract is deployed, custom token add
   expect((await order.json()).error.code).toBe("CONTRACT_NOT_DEPLOYED");
   await context.close();
 });
+
+test("swap page and docs state: no platform swap fee; each party is responsible for their swap", async ({ page }) => {
+  await page.goto("/swap");
+  const notices = page.getByTestId("swap-notices");
+  await expect(notices).toContainText("스왑에 대한 수수료는 플랫폼에서 부과하지 않습니다.");
+  await expect(notices).toContainText("스왑에 대한 모든 책임은 스왑을 진행하는 각자가 책임을 집니다.");
+  await page.goto("/docs#swap");
+  await expect(page.locator("#swap")).toContainText("스왑에 대한 수수료는 플랫폼에서 부과하지 않습니다.");
+  await expect(page.locator("#swap")).toContainText("스왑을 진행하는 각자가 책임을 집니다.");
+});

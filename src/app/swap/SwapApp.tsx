@@ -9,6 +9,7 @@ import { dateTime, shortAddress } from "@/lib/format";
 import type { SwapChain } from "@/lib/swap/chains";
 import { explorerAddress, explorerTx } from "@/lib/swap/chains";
 import { ensureAllowance, swapClients, tokenBalance, walletErrorMessage } from "@/lib/swap/browser";
+import { SWAP_FEE_NOTICE, SWAP_RESPONSIBILITY_NOTICE } from "@/lib/swap/notices";
 import { fromUnits, ORDER_TYPES, orderPrice, sellAmountForPayment, swapDomain, toUnits, type SwapOrder } from "@/lib/swap/order";
 
 interface ChainView extends SwapChain {
@@ -123,8 +124,15 @@ export function SwapApp() {
         title="P2P 스왑"
         desc="판매자가 가격을 정해 서명한 주문을 다른 사용자가 체결합니다. 체결은 스마트 컨트랙트 한 번의 트랜잭션으로 양쪽 토큰이 동시에 교환되며, 플랫폼은 토큰을 보관하지 않습니다."
       />
+      <div className="rounded-lg border border-warn/50 bg-warn/10 px-4 py-3 text-sm text-warn" data-testid="swap-notices">
+        <p className="font-semibold">{SWAP_FEE_NOTICE}</p>
+        <p className="mt-1 font-semibold">{SWAP_RESPONSIBILITY_NOTICE}</p>
+        <p className="mt-1 text-xs text-warn/80">
+          가격·상대방·토큰은 이용자가 직접 정하고 확인합니다. 블록체인 네트워크 가스비는 각 이용자의 지갑에서 지불됩니다.
+        </p>
+      </div>
       {config.network === "testnet" && (
-        <Notice tone="info">테스트넷 전용입니다. 메인넷 스왑은 컨트랙트 외부 보안 감사 후에만 활성화됩니다. 현재 스왑 수수료는 없습니다.</Notice>
+        <Notice tone="info">테스트넷 전용입니다. 메인넷 스왑은 컨트랙트 외부 보안 감사 후에만 활성화됩니다.</Notice>
       )}
 
       <div className="flex flex-wrap gap-2" role="tablist" aria-label="체인 선택">
@@ -477,6 +485,9 @@ function FillDialog({
           </label>
         )}
         <p className="text-xs text-muted">지갑에서 ① {buy?.symbol} 사용 승인(필요한 경우) ② 체결 트랜잭션을 확인합니다. 가스비는 본인 부담입니다.</p>
+        <p className="text-xs font-semibold text-warn">
+          {SWAP_FEE_NOTICE} {SWAP_RESPONSIBILITY_NOTICE}
+        </p>
         {step && <p className="text-sm text-accent">{step}</p>}
         <div className="flex gap-2">
           <button className={buttonClass("secondary") + " flex-1"} onClick={onClose} disabled={Boolean(step)}>
@@ -625,6 +636,9 @@ function CreateOrder({
       {err && <p className="text-xs text-down">{err}</p>}
       <p className="text-xs text-muted">
         ① {sell.symbol} 판매 수량만큼 컨트랙트 사용 승인(approve) ② 주문 서명(가스비 없음). 토큰은 체결 순간까지 내 지갑에 있습니다. 취소는 아래 &lsquo;내 주문&rsquo;에서 온체인으로 합니다.
+      </p>
+      <p className="text-xs font-semibold text-warn">
+        {SWAP_FEE_NOTICE} {SWAP_RESPONSIBILITY_NOTICE}
       </p>
       {step && <p className="text-sm text-accent">{step}</p>}
       {w.me?.user ? (
