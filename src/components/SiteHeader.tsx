@@ -13,6 +13,7 @@ import { ensureWalletChain, useWallet } from "./wallet/WalletProvider";
 const NAV = [
   { href: "/bots", label: "봇 마켓" },
   { href: "/trade", label: "트레이딩" },
+  { href: "/swap", label: "스왑" },
   { href: "/rankings", label: "랭킹" },
   { href: "/partners", label: "파트너 안내" },
   { href: "/portfolio", label: "마이페이지" },
@@ -24,7 +25,9 @@ export function SiteHeader() {
   const [menu, setMenu] = useState(false);
   const network = w.me?.config.network ?? "testnet";
   const walletChain = w.me?.config.walletChain;
-  const wrongChain = Boolean(w.me?.user && walletChain && w.chainId && w.chainId !== walletChain.id);
+  // Swap and admin deploys run on other EVM chains on purpose; no warning there.
+  const onOtherChainPage = pathname.startsWith("/swap") || pathname.startsWith("/admin");
+  const wrongChain = Boolean(!onOtherChainPage && w.me?.user && walletChain && w.chainId && w.chainId !== walletChain.id);
 
   return (
     <>

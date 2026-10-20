@@ -5,12 +5,14 @@ import { useCallback, useEffect, useState } from "react";
 import { Badge, buttonClass, Card, cx, Notice, Stat } from "@/components/ui";
 import { apiFetch } from "@/lib/client-api";
 import { dateTime, feeLabel, RISK_LABELS, shortAddress, STATUS_LABELS } from "@/lib/format";
+import { SwapAdmin } from "./SwapAdmin";
 
 const TABS = [
   ["review", "봇 심사"],
   ["revenue", "수익·정산"],
   ["payouts", "지급"],
   ["policy", "수수료 정책"],
+  ["swap", "스왑 컨트랙트"],
   ["system", "시스템·위험"],
   ["audit", "감사 로그"],
 ] as const;
@@ -37,6 +39,7 @@ export function AdminConsole({ adminId }: { adminId: string }) {
       {tab === "revenue" && <Revenue />}
       {tab === "payouts" && <Payouts />}
       {tab === "policy" && <Policy />}
+      {tab === "swap" && <SwapAdmin />}
       {tab === "system" && <SystemTab />}
       {tab === "audit" && <Audit />}
     </div>

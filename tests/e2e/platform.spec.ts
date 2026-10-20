@@ -192,3 +192,36 @@ test("live Hyperliquid testnet market data is shown on /trade", async ({ page })
   await expect(page.getByText(/Hyperliquid 캔들 · .* 갱신/)).toBeVisible({ timeout: 30_000 });
   await expect(page.getByText("● 실시간")).toBeVisible({ timeout: 30_000 });
 });
+
+test("swap page: 5 chains, locked until a contract is deployed, custom token added from chain metadata", async ({ browser, baseURL }) => {
+  const anon = await browser.newPage();
+  await anon.goto("/swap");
+  for (const name of ["Ethereum Sepolia", "BNB Smart Chain Testnet", "Polygon Amoy", "Base Sepolia", "Robinhood Chain Testnet"]) {
+    await expect(anon.getByRole("tab", { name: new RegExp(name) })).toBeVisible();
+  }
+  await expect(anon.getByRole("tab", { name: /BEP-20/ })).toBeVisible();
+  await expect(anon.getByText(/아직 스왑 컨트랙트가 배포되지 않아/)).toBeVisible();
+  await expect(anon.locator('header a[href="/swap"]')).toBeVisible();
+  await anon.close();
+
+  // Signed-in user adds Circle's Sepolia USDC; symbol/decimals come from the chain.
+  const { page, context } = await walletPage(browser, E2E_KEYS.trader);
+  await page.goto("/");
+  await signInViaUi(page);
+  const res = await api(page.request, baseURL!).post("/api/swap/tokens", {
+    chainId: 11155111,
+    address: "0x1c7D4B196Cb0C7B01d743Fbc6116a902379C7238",
+  });
+  expect(res.status()).toBe(201);
+  const { token } = await res.json();
+  expect(token).toMatchObject({ symbol: "USDC", decimals: 6, listed: false });
+  // Orders cannot be posted before the contract is deployed on that chain.
+  const order = await api(page.request, baseURL!).post("/api/swap/orders", {
+    chainId: 11155111,
+    signature: "0x" + "11".repeat(65),
+    order: { maker: "0x0000000000000000000000000000000000000001", sellToken: token.address, buyToken: token.address, sellAmount: "1", buyAmount: "1", taker: "0x0000000000000000000000000000000000000000", expiry: "9999999999", nonce: "1" },
+  });
+  expect(order.status()).toBe(409);
+  expect((await order.json()).error.code).toBe("CONTRACT_NOT_DEPLOYED");
+  await context.close();
+});

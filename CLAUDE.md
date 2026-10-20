@@ -16,6 +16,7 @@
 - 원장·감사 로그는 append-only. 정정은 반대 분개로. 수수료 정책은 미래 시점 버전만 추가.
 - 변경 API는 `mutationContext`(세션·역할·Origin·rate limit)를 사용한다. 화면 권한은 서버 컴포넌트에서 검사(메뉴 숨김은 보안이 아님).
 - Hyperliquid 접근은 `HlGateway`를 통해서만(테스트에서 `tests/helpers/fake-hl.ts`로 교체).
+- 스왑 컨트랙트는 `contracts/`(Hardhat 3 별도 패키지). 수정 시 `npm run contracts:test` 후 `npm run contracts:export`로 `src/lib/swap/artifact.json` 갱신. 메인넷 배포는 외부 감사 후에만.
 - 스키마 변경: `src/lib/db/schema.ts` 수정 → `npm run db:generate` → 생성된 SQL 검토.
 
 ## 검증

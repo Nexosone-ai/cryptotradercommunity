@@ -15,6 +15,20 @@
       "when": 1792310802458,
       "tag": "0001_rls_and_immutability",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792504660085,
+      "tag": "0002_swap",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1792504661504,
+      "tag": "0003_swap_rls",
+      "breakpoints": true
     }
   ]
 }

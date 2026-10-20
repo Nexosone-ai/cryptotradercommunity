@@ -35,6 +35,8 @@ DATABASE_URL=postgres://... npm run db:migrate
 | `MAX_MANUAL_ORDER_USD` | — | 기본 1000 |
 | `AGENT_KEY_ENCRYPTION_KEY` | 거래 기능 | 64 hex. KMS 보관 권장, 웹·워커 동일 값 |
 | `SETTLEMENT_INTERVAL_MS` | 워커 | 기본 60000 |
+| `SWAP_NETWORK` / `SWAP_MAINNET_ENABLED` | — | 스왑 체인 세트. 기본 테스트넷, 메인넷은 둘 다 설정 + 감사 후 |
+| `SWAP_RPC_<chainId>` | — | 스왑 체인 RPC 교체 (메인넷은 유료 엔드포인트 권장) |
 
 ## 3. Vercel
 1. 이 저장소를 GitHub에 push → Vercel 프로젝트 연결(Framework: Next.js).

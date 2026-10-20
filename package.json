@@ -15,7 +15,10 @@
     "db:migrate": "tsx scripts/migrate.ts",
     "worker:settlement": "tsx --conditions=react-server workers/settlement.ts",
     "check:hl": "tsx scripts/check-hyperliquid.ts",
-    "verify": "npm run typecheck && npm run lint && npm test && npm run build"
+    "verify": "npm run typecheck && npm run lint && npm test && npm run build",
+    "contracts:test": "npm --prefix contracts test",
+    "contracts:export": "npm --prefix contracts run export",
+    "test:chain": "vitest run --config vitest.chain.config.ts"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.10",

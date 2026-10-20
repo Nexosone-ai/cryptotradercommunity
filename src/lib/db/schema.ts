@@ -6,6 +6,7 @@ import {
   index,
   integer,
   jsonb,
+  numeric,
   pgEnum,
   pgTable,
   primaryKey,
@@ -410,3 +411,76 @@ export const rateLimitBuckets = pgTable("rate_limit_buckets", {
   windowStart: timestamp("window_start", { withTimezone: true }).notNull(),
   count: integer("count").notNull(),
 });
+
+// ── P2P swap (docs/SWAP.md) ────────────────────────────────────────────────
+// Token amounts are uint256 base units stored as numeric(78,0) strings.
+
+const uint256 = (name: string) => numeric(name, { precision: 78, scale: 0 });
+
+/** Settlement contract per chain, recorded only after on-chain code verification. */
+export const swapDeployments = pgTable("swap_deployments", {
+  chainId: integer("chain_id").primaryKey(),
+  contractAddress: text("contract_address").notNull(),
+  txHash: text("tx_hash").notNull(),
+  deployedByUserId: text("deployed_by_user_id").notNull().references(() => users.id),
+  deployer: text("deployer").notNull(),
+  codeHash: text("code_hash").notNull(),
+  verifiedAt: timestamp("verified_at", { withTimezone: true }).notNull(),
+});
+
+export const swapTokens = pgTable("swap_tokens", {
+  id: id(),
+  chainId: integer("chain_id").notNull(),
+  /** Lowercase address. */
+  address: text("address").notNull(),
+  symbol: text("symbol").notNull(),
+  name: text("name").notNull(),
+  decimals: integer("decimals").notNull(),
+  /** true = reviewed by an admin; false = custom token added by a user. */
+  listed: boolean("listed").notNull().default(false),
+  addedByUserId: text("added_by_user_id").references(() => users.id),
+  createdAt: createdAt(),
+}, (t) => [
+  uniqueIndex("swap_tokens_chain_address_uq").on(t.chainId, t.address),
+  check("swap_tokens_decimals", sql`${t.decimals} between 0 and 36`),
+]);
+
+export const swapOrders = pgTable("swap_orders", {
+  id: id(),
+  chainId: integer("chain_id").notNull(),
+  contractAddress: text("contract_address").notNull(),
+  orderHash: text("order_hash").notNull(),
+  makerUserId: text("maker_user_id").notNull().references(() => users.id),
+  maker: text("maker").notNull(),
+  sellToken: text("sell_token").notNull(),
+  buyToken: text("buy_token").notNull(),
+  sellAmount: uint256("sell_amount").notNull(),
+  buyAmount: uint256("buy_amount").notNull(),
+  taker: text("taker").notNull(),
+  expiry: bigint("expiry", { mode: "number" }).notNull(),
+  nonce: uint256("nonce").notNull(),
+  signature: text("signature").notNull(),
+  /** Mirror of on-chain state: OPEN | FILLED | CANCELLED | EXPIRED */
+  status: text("status").notNull(),
+  filledBuyAmount: uint256("filled_buy_amount").notNull().default("0"),
+  lastSyncedAt: timestamp("last_synced_at", { withTimezone: true }),
+  createdAt: createdAt(),
+}, (t) => [
+  uniqueIndex("swap_orders_chain_hash_uq").on(t.chainId, t.orderHash),
+  index("swap_orders_pair_idx").on(t.chainId, t.sellToken, t.buyToken, t.status),
+  index("swap_orders_maker_idx").on(t.makerUserId),
+]);
+
+export const swapFills = pgTable("swap_fills", {
+  id: id(),
+  chainId: integer("chain_id").notNull(),
+  orderHash: text("order_hash").notNull(),
+  txHash: text("tx_hash").notNull(),
+  logIndex: integer("log_index").notNull(),
+  blockNumber: bigint("block_number", { mode: "number" }).notNull(),
+  maker: text("maker").notNull(),
+  taker: text("taker").notNull(),
+  sellAmountFilled: uint256("sell_amount_filled").notNull(),
+  buyAmountFilled: uint256("buy_amount_filled").notNull(),
+  createdAt: createdAt(),
+}, (t) => [uniqueIndex("swap_fills_tx_log_uq").on(t.chainId, t.txHash, t.logIndex)]);
