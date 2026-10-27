@@ -42,11 +42,11 @@ const EMPTY: Form = {
   consents: { terms: false, risk: false, performancePolicy: false },
 };
 
-const STEPS = ["기본 정보", "전략 · 마켓", "위험 한도", "실행 · 개발자", "수수료 · 동의"];
+const STEPS = ["기본 정보", "전략 · 소스코드", "위험 한도", "실행 · 개발자", "수수료 · 동의"];
 
-export function BotWizard({ ownerAddress, platformMaxFeeTenthsBp, editId }: { ownerAddress: string; platformMaxFeeTenthsBp: number; editId: string | null }) {
+export function BotWizard({ ownerAddress, platformMaxFeeTenthsBp, editId, initialStep }: { ownerAddress: string; platformMaxFeeTenthsBp: number; editId: string | null; initialStep?: number }) {
   const router = useRouter();
-  const [step, setStep] = useState(0);
+  const [step, setStep] = useState(initialStep ?? 0);
   const [f, setF] = useState<Form>(EMPTY);
   const [markets, setMarkets] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
@@ -174,6 +174,7 @@ export function BotWizard({ ownerAddress, platformMaxFeeTenthsBp, editId }: { ow
                 ))}
               </select>
             </Field>
+            <SourceEditor value={f.source as never} onChange={(v) => set("source", v)} error={err("source")} />
             <Field label="거래 마켓 (Hyperliquid Perpetuals, 최대 10개)">
               <input
                 value={f.markets.join(", ")}
@@ -286,7 +287,6 @@ export function BotWizard({ ownerAddress, platformMaxFeeTenthsBp, editId }: { ow
                 업로드한 임의 코드는 프로덕션 서버에서 실행하지 않습니다. 패키지·Webhook은 샌드박스 격리와 보안 심사 후 Phase 2에서 활성화됩니다.
               </p>
             </Field>
-            <SourceEditor value={f.source as never} onChange={(v) => set("source", v)} error={err("source")} />
             <Field label="개발자 소개">
               <textarea rows={3} value={f.developer.bio} onChange={(e) => set("developer", { ...f.developer, bio: e.target.value })} />
             </Field>

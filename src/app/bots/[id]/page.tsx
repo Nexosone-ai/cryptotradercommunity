@@ -3,7 +3,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AddressLink } from "@/components/AddressLink";
 import { FeeBreakdown, RiskBadge, VerificationBadge } from "@/components/bots";
-import { Badge, Card, Notice, Stat } from "@/components/ui";
+import { Badge, buttonClass, Card, Notice, Stat } from "@/components/ui";
 import { getCurrentUser } from "@/lib/auth/current";
 import { assessBotRisk } from "@/lib/bots/risk";
 import { EXECUTION_LABELS, STRATEGY_LABELS, type BotConfig } from "@/lib/bots/schema";
@@ -168,11 +168,21 @@ export default async function BotDetail({ params, searchParams }: PageProps<"/bo
             <p className="mt-3 text-xs text-faint">공개 범위: 지갑 주소·설정·실거래 성과. 소스코드는 개발자가 공개로 설정한 경우에만 보입니다.</p>
           </Card>
 
-          {source && (
+          {source ? (
             <Card>
               <h2 className="mb-3 font-semibold">전략 소스코드</h2>
               <BotSourcePanel meta={source.meta} code={source.code} />
             </Card>
+          ) : (
+            isOwner && (
+              <Card>
+                <h2 className="mb-2 font-semibold">전략 소스코드</h2>
+                <p className="text-sm text-muted">첨부된 소스코드가 없습니다. Pine Script 등 전략 코드를 심사용으로 첨부할 수 있습니다(기본 비공개).</p>
+                <Link href={`/bots/register?edit=${bot.id}&step=source`} className={`mt-3 inline-flex ${buttonClass("secondary", "sm")}`}>
+                  소스코드 첨부
+                </Link>
+              </Card>
+            )
           )}
 
           <Card>

@@ -40,12 +40,12 @@ export function SourceEditor({ value, onChange, error }: { value: SourceValue | 
 
   if (!value) {
     return (
-      <div className="rounded-lg border border-dashed border-line-strong p-4 text-sm">
+      <div className="rounded-lg border border-dashed border-accent/50 bg-accent/5 p-4 text-sm">
         <p className="font-medium">전략 소스코드 첨부 (선택)</p>
         <p className="mt-1 text-xs text-muted">TradingView Pine Script 등 전략 코드를 심사용으로 첨부할 수 있습니다. 플랫폼은 첨부한 코드를 실행하지 않습니다.</p>
         <button
           type="button"
-          className="mt-3 rounded-lg border border-line-strong px-3 py-1.5 text-xs hover:border-accent/60"
+          className="mt-3 rounded-lg border border-accent/60 px-3 py-1.5 text-sm font-medium text-accent hover:bg-accent/10"
           onClick={() => onChange({ language: "PINESCRIPT", visibility: "PRIVATE", code: "" })}
         >
           + 소스코드 첨부

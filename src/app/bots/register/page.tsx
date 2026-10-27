@@ -17,6 +17,7 @@ export default async function RegisterPage({ searchParams }: PageProps<"/bots/re
       ownerAddress={user.walletAddress}
       platformMaxFeeTenthsBp={cfg.platformMaxFeeTenthsBp}
       editId={typeof sp.edit === "string" ? sp.edit : null}
+      initialStep={sp.step === "source" ? 1 : undefined}
     />
   );
 }

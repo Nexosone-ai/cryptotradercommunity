@@ -312,7 +312,7 @@ test("strategy source: Pine Script pasted in the wizard is analysed, stored priv
 
   // Wizard: attach the script and see the detected header.
   await page.goto("/bots/register");
-  await page.getByRole("button", { name: /실행 · 개발자/ }).click();
+  await page.getByRole("button", { name: /전략 · 소스코드/ }).click();
   await page.getByRole("button", { name: "+ 소스코드 첨부" }).click();
   await page.getByLabel("코드 붙여넣기").fill(pine);
   const meta = page.getByTestId("pine-meta");
