@@ -62,7 +62,11 @@ describe("agent key encryption", () => {
     expect(pk).toMatch(/^0x[0-9a-f]{64}$/);
     expect(() => decryptAgentKey(agent.encryptedKey, "0x0000000000000000000000000000000000000001")).toThrow();
     const sealed = encryptSecret("hello", "aad");
-    const tampered = sealed.slice(0, -2) + (sealed.endsWith("A") ? "B" : "A") + "=";
+    // Flip one byte of the ciphertext itself (not just base64 padding bits).
+    const [iv, tag, data] = sealed.split(".");
+    const bytes = Buffer.from(data, "base64");
+    bytes[0] ^= 0xff;
+    const tampered = [iv, tag, bytes.toString("base64")].join(".");
     expect(decryptSecret(sealed, "aad")).toBe("hello");
     expect(() => decryptSecret(tampered, "aad")).toThrow();
     delete process.env.AGENT_KEY_ENCRYPTION_KEY;

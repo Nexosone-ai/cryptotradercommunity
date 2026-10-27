@@ -235,3 +235,65 @@ test("swap page and docs state: no platform swap fee; each party is responsible 
   await expect(page.locator("#swap")).toContainText("스왑에 대한 수수료는 플랫폼에서 부과하지 않습니다.");
   await expect(page.locator("#swap")).toContainText("스왑을 진행하는 각자가 책임을 집니다.");
 });
+
+test("partner billing: bank top-up → admin credit → customer invoice → payment confirmed → earnings", async ({ browser, baseURL }) => {
+  // Fresh partner wallet.
+  const { generatePrivateKey } = await import("viem/accounts");
+  const ctx = await browser.newContext();
+  await installTestWallet(ctx, generatePrivateKey());
+  const page = await ctx.newPage();
+  await page.goto("/");
+  await signInViaUi(page);
+  const r = api(page.request, baseURL!);
+  expect((await r.post("/api/partner/activate", { acceptPartnerTerms: true })).status()).toBe(200);
+  await page.reload();
+
+  // Top-up request shows the company account and a reference code.
+  await page.goto("/partner");
+  await expect(page.getByTestId("partner-services")).toBeVisible();
+  await expect(page.getByText(/영상 생성 서비스\(fal.ai\)가 아직 설정되지 않았습니다/)).toBeVisible();
+  await page.getByRole("tab", { name: "크레딧" }).click();
+  // Packages are priced in KRW from a live exchange rate, VAT included.
+  const packages = page.getByTestId("credit-packages");
+  await expect(packages.getByText("$50", { exact: true })).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(/원화 금액은 부가세 10% 포함/)).toBeVisible();
+  await packages.getByRole("button", { name: "구매 요청" }).first().click();
+  const instructions = page.getByTestId("topup-instructions");
+  await expect(instructions.getByText("000-111-222")).toBeVisible();
+  await expect(instructions.getByText(/^₩[\d,]+$/)).toBeVisible();
+  const ref = (await instructions.locator("dd.font-bold.text-accent").first().textContent())!.trim();
+  expect(ref).toMatch(/^TOP-/);
+
+  // Admin confirms the deposit.
+  const admin = await walletPage(browser, E2E_KEYS.admin);
+  await admin.page.goto("/");
+  await signInViaUi(admin.page);
+  const ra = api(admin.page.request, baseURL!);
+  const list = await (await admin.page.request.get("/api/admin/partner-services")).json();
+  const topup = list.topups.find((x: { t: { referenceCode: string } }) => x.t.referenceCode === ref).t;
+  // VAT-inclusive KRW amount locked into the request: total = supply + floor(supply × 10%).
+  expect(Number(topup.krwTotal)).toBe(Number(topup.krwSupply) + Math.floor(Number(topup.krwSupply) / 10));
+  expect((await ra.post(`/api/admin/partner-services/topups/${topup.id}`, { decision: "APPROVE" })).status()).toBe(200);
+
+  // Partner issues an invoice; the public page shows the company account.
+  const inv = await (await r.post("/api/partner/invoices", { issuerName: "E2E Studio", customerName: "Customer K", description: "10 promo clips", amountUsd: "40" })).json();
+  const pub = await browser.newPage();
+  await pub.goto(`/invoice/${inv.invoice.publicToken}`);
+  await expect(pub.getByRole("heading", { name: "E2E Studio" })).toBeVisible();
+  await expect(pub.getByText("$40.00 USD")).toBeVisible();
+  await expect(pub.getByText("000-111-222")).toBeVisible();
+  await expect(pub.getByText(inv.invoice.referenceCode)).toBeVisible();
+
+  // Admin confirms the customer's payment → full amount owed to the partner.
+  expect((await ra.post(`/api/admin/partner-services/invoices/${inv.invoice.id}/paid`, {})).status()).toBe(200);
+  const summary = await (await page.request.get("/api/partner/services")).json();
+  expect(summary.creditE8).toBe("5000000000");
+  expect(summary.invoicePayableE8).toBe("4000000000");
+  await pub.reload();
+  await expect(pub.getByText("입금 확인")).toBeVisible();
+  // Non-admins cannot confirm payments.
+  expect((await r.post(`/api/admin/partner-services/invoices/${inv.invoice.id}/paid`, {})).status()).toBe(403);
+  await pub.close();
+  await admin.context.close();
+  await ctx.close();
+});

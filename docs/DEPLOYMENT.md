@@ -27,7 +27,7 @@ DATABASE_URL=postgres://... npm run db:migrate
 | `SESSION_SECRET` | 프로덕션 예 | 32자 이상 랜덤 |
 | `ADMIN_WALLET_ADDRESS` | 예 | 최초 관리자 |
 | `HL_NETWORK` | — | `testnet`(기본) / `mainnet` |
-| `WALLET_CHAIN_ID` | — | 지갑 서명 체인. 기본 testnet=998(HyperEVM testnet), mainnet=42161 |
+| `WALLET_CHAIN_ID` | — | 지갑 서명 체인. 기본 testnet=998(HyperEVM testnet), mainnet=999(HyperEVM mainnet) |
 | `MAINNET_TRADING_ENABLED` | — | `true`일 때만 메인넷 주문(+UI 재확인) |
 | `BUILDER_ADDRESS` | 수수료 기능 | 플랫폼 Builder 주소(해당 네트워크 perps ≥ 100 USDC) |
 | `PLATFORM_MAX_BUILDER_FEE_TENTHS_BP` | — | 기본 50 (0.05%) |
@@ -36,6 +36,11 @@ DATABASE_URL=postgres://... npm run db:migrate
 | `AGENT_KEY_ENCRYPTION_KEY` | 거래 기능 | 64 hex. KMS 보관 권장, 웹·워커 동일 값 |
 | `SETTLEMENT_INTERVAL_MS` | 워커 | 기본 60000 |
 | `SWAP_NETWORK` / `SWAP_MAINNET_ENABLED` | — | 스왑 체인 세트. 기본 테스트넷, 메인넷은 둘 다 설정 + 감사 후 |
+| `FAL_KEY` / `FAL_WEBHOOK_TOKEN` | 파트너 영상 | fal.ai 키·웹훅 토큰 (docs/PARTNER_VIDEO.md) |
+| `VIDEO_MARKUP_PPM` | — | 파트너 영상 이용료 마크업, 기본 1400000(×1.4) |
+| `COMPANY_NAME` / `COMPANY_BANK_NAME` / `COMPANY_BANK_ACCOUNT` / `COMPANY_BANK_HOLDER` | 충전·청구서 | 회사 입금 계좌 |
+| `CREDIT_PACKAGES_USD` | — | 크레딧 패키지(USD), 기본 `50,100,300,500,1000` |
+| `KOREAEXIM_API_KEY` | — | 한국수출입은행 환율 API 키(없으면 무료 환율 API) |
 | `SWAP_RPC_<chainId>` | — | 스왑 체인 RPC 교체 (메인넷은 유료 엔드포인트 권장) |
 
 ## 3. Vercel

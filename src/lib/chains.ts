@@ -54,5 +54,5 @@ export const WALLET_CHAINS: Record<number, WalletChain> = {
   },
 };
 
-/** Testnet signs on the HyperEVM testnet (998); mainnet on Arbitrum One. */
-export const DEFAULT_WALLET_CHAIN = { testnet: 998, mainnet: 42161 } as const;
+/** Wallet signing chain: HyperEVM testnet (998) / HyperEVM mainnet (999). */
+export const DEFAULT_WALLET_CHAIN = { testnet: 998, mainnet: 999 } as const;

@@ -158,6 +158,19 @@ describe("server-side order gate", () => {
     }
   });
 
+  it("view-only mainnet refuses to hand out trading permission", async () => {
+    const trader = await makeUser(db);
+    process.env.HL_NETWORK = "mainnet";
+    try {
+      await expect(prepareAgent(db, trader)).rejects.toMatchObject({ code: "MAINNET_DISABLED" });
+      process.env.MAINNET_TRADING_ENABLED = "true";
+      await expect(prepareAgent(db, trader)).resolves.toMatchObject({ network: "mainnet", hyperliquidChain: "Mainnet" });
+    } finally {
+      process.env.HL_NETWORK = "testnet";
+      delete process.env.MAINNET_TRADING_ENABLED;
+    }
+  });
+
   it("agent verification requires Hyperliquid to report the agent", async () => {
     const trader = await makeUser(db);
     await prepareAgent(db, trader);

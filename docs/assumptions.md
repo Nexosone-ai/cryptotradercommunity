@@ -25,11 +25,16 @@
 | Testnet | `api.hyperliquid-testnet.xyz`, 212개 perp ✅ | 기본 네트워크 |
 
 ## 1-1. 지갑 네트워크 (2026-10-18 결정)
-- 테스트넷 단계의 지갑 네트워크는 **Hyperliquid 테스트넷 HyperEVM (chain 998, RPC `https://rpc.hyperliquid-testnet.xyz/evm`, 가스 HYPE)** — 사용자 결정. 처음엔 Ethereum Sepolia로 설정했으나, Hyperliquid 테스트넷은 Sepolia 자산과 연결되지 않으므로 HyperEVM 테스트넷으로 변경. 메인넷 기본값은 Arbitrum One(42161). `WALLET_CHAIN_ID`로 변경 가능.
+- 테스트넷 단계의 지갑 네트워크는 **Hyperliquid 테스트넷 HyperEVM (chain 998, RPC `https://rpc.hyperliquid-testnet.xyz/evm`, 가스 HYPE)** — 사용자 결정. 처음엔 Ethereum Sepolia로 설정했으나, Hyperliquid 테스트넷은 Sepolia 자산과 연결되지 않으므로 HyperEVM 테스트넷으로 변경. 메인넷 기본값은 HyperEVM 메인넷(999) — 2026-10-24 사용자 결정, Hyperliquid 메인넷이 0x3e7 서명자를 정확히 복원함을 미입금 키로 실측. `WALLET_CHAIN_ID`로 변경 가능.
 - 이 체인은 *서명용*: SIWE 로그인 메시지의 Chain ID와 Hyperliquid user-signed 액션(approveBuilderFee/approveAgent)의 `signatureChainId`(0x3e6). 거래·잔고(perps USDC)는 HyperCore 테스트넷에 있다.
 - 실측: `signatureChainId` 0x3e6로 서명한 approveAgent에서 Hyperliquid 테스트넷이 서명자 주소를 정확히 복원 ✅ (미입금 계정이라 "Must deposit" 응답). RPC `eth_chainId` = 0x3e6 ✅.
 - 테스트넷 USDC: Hyperliquid 공식 faucet `https://app.hyperliquid-testnet.xyz/drip` — **같은 주소로 Hyperliquid 메인넷에 입금한 이력이 있어야** 1,000 mock USDC를 받을 수 있다(공식 문서 onboarding/testnet-faucet). 주문·승인 전 테스트넷 계정에 USDC가 있어야 한다("Must deposit before performing actions").
 - 서버는 nonce 발급 시 chainId가 설정값과 다르면 `WRONG_CHAIN`으로 거부하고, 클라이언트는 서명 전에 `wallet_switchEthereumChain`(없으면 `wallet_addEthereumChain`)으로 전환·추가를 요청한다.
+
+## 1-2. 메인넷 전환 단계 (2026-10-24 사용자 결정)
+- **1단계(현재): 조회 전용 메인넷** — `HL_NETWORK=mainnet`, `WALLET_CHAIN_ID=999`, `MAINNET_TRADING_ENABLED=false`. 시세·호가·계정 조회와 로그인은 메인넷, 주문·거래 권한 위임(approveAgent)은 서버에서 거부(`MAINNET_DISABLED`).
+- 2단계(미실행): `MAINNET_TRADING_ENABLED=true` — 보안 감사·Builder 주소(메인넷 perps ≥100 USDC)·관리자 지갑 설정 후 사용자 명시 승인으로만.
+- P2P 스왑은 컨트랙트 외부 감사 전까지 **테스트넷 유지**(`SWAP_NETWORK` 미변경).
 
 ## 2. 요구사항과 다르게(또는 제한적으로) 구현한 부분
 

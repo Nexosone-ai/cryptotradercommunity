@@ -29,6 +29,27 @@
       "when": 1792504661504,
       "tag": "0003_swap_rls",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793071371680,
+      "tag": "0004_partner_video",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793071373038,
+      "tag": "0005_partner_video_rls",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793072226624,
+      "tag": "0006_topup_krw_quote",
+      "breakpoints": true
     }
   ]
 }

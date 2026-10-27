@@ -29,6 +29,11 @@ export default defineConfig({
       ADMIN_WALLET_ADDRESS: E2E_ADMIN_ADDRESS,
       BUILDER_ADDRESS: "",
       NEXT_DIST_DIR: ".next-e2e",
+      // Placeholder company account for the partner billing flow (test only).
+      COMPANY_NAME: "E2E Test Co",
+      COMPANY_BANK_NAME: "E2E Bank",
+      COMPANY_BANK_ACCOUNT: "000-111-222",
+      COMPANY_BANK_HOLDER: "E2E Test Co",
     },
   },
 });

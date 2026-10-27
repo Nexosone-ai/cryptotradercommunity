@@ -52,6 +52,10 @@ export async function prepareAgent(db: Db, user: SessionUser) {
   if (!cfg.agentKeyConfigured) {
     throw new ApiError(503, "AGENT_KEYS_DISABLED", "서버에 에이전트 키 암호화 설정이 없어 거래 권한 위임을 사용할 수 없습니다.");
   }
+  // View-only mainnet: no trading permission is handed out until mainnet trading is enabled.
+  if (cfg.isMainnet && !cfg.mainnetTradingEnabled) {
+    throw new ApiError(403, "MAINNET_DISABLED", "메인넷 거래가 활성화되지 않아 거래 권한을 위임할 수 없습니다.");
+  }
   // Superseded pending agents are discarded; Hyperliquid advises never reusing agent addresses.
   await db
     .update(agentAuthorizations)

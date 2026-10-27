@@ -6,6 +6,7 @@ import { getConfig } from "@/lib/config";
 import { getDb } from "@/lib/db/client";
 import { formatUsdcE8 } from "@/lib/money";
 import { partnerSummary } from "@/lib/partner/queries";
+import { PartnerServices } from "./PartnerServices";
 import { PartnerTools } from "./PartnerTools";
 
 export const metadata: Metadata = { title: "파트너 대시보드", robots: { index: false } };
@@ -34,6 +35,7 @@ export default async function PartnerDashboard() {
         <Stat label="추천 거래 Builder Fee (확정)" value={`${formatUsdcE8(s.referredFeesConfirmedE8)} USDC`} />
         <Stat label="추천 거래 Builder Fee (확인 대기)" value={`${formatUsdcE8(s.referredFeesObservedE8)} USDC`} hint="정산 확정 전, 수익에 미포함" />
       </div>
+      <PartnerServices />
       <Card className="text-xs leading-relaxed text-muted">
         계산 근거: 정산 확정된 추가 Builder Fee × 관리자 풀 30% × 파트너 풀 80% × (1차 60% / 2차 40%). 각 수익 행에는 체결 시점의 수수료 정책 버전이 표시됩니다.
         추천 트레이더 지갑은 개인정보 보호를 위해 마스킹되며 포지션 등 개별 거래 정보는 제공하지 않습니다.

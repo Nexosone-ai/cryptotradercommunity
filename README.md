@@ -7,6 +7,7 @@ Hyperliquid 기반 비수탁형 트레이딩 봇 오픈 마켓플레이스 — *
 - Hyperliquid Testnet 실시간 시세·호가·계정 조회, 서버 주문 게이트를 거친 실주문
 - 공식 Builder Codes 추가 수수료: 봇 등록자 70% / 관리자 풀 30%(플랫폼 6% · 1차 14.4% · 2차 9.6%), 정수 원장
 - 2단계 파트너 추천, 정책 버전, 감사 로그(해시 체인, append-only)
+- **파트너 영상 서비스**: 영상 1개 → fal.ai로 비슷한 영상 10개 생성, 계좌이체 크레딧(원가×1.4), 파트너 가격의 고객 청구서(회사 계좌 입금) → 파트너 정산 (`docs/PARTNER_VIDEO.md`)
 - **P2P 스왑**: Ethereum·BNB Chain·Polygon·Base·Robinhood Chain에서 판매자가 가격을 정한 서명 주문을 자체 정산 컨트랙트로 원자적 체결 (테스트넷, `docs/SWAP.md`)
 
 현재 상태: **Phase 1 MVP** — 무엇이 동작하고 무엇이 남았는지는 `docs/PRD.md`와 `docs/assumptions.md` 참고.
@@ -39,7 +40,7 @@ npm run dev                    # http://localhost:3000 — DB 없으면 ./.data/
 | `npm run check:hl` | Hyperliquid 연결·Builder 자격 점검(읽기 전용) |
 
 ## 문서
-`docs/PRD.md` · `docs/SWAP.md` · `docs/ARCHITECTURE.md` · `docs/FEE_POLICY.md` · `docs/SECURITY.md` · `docs/DEPLOYMENT.md` · `docs/API.md` · `docs/assumptions.md` · `docs/LEGAL_CHECKLIST.md` · 원본 요구사항 `docs/MASTER_PROMPT.md`
+`docs/PRD.md` · `docs/SWAP.md` · `docs/PARTNER_VIDEO.md` · `docs/ARCHITECTURE.md` · `docs/FEE_POLICY.md` · `docs/SECURITY.md` · `docs/DEPLOYMENT.md` · `docs/API.md` · `docs/assumptions.md` · `docs/LEGAL_CHECKLIST.md` · 원본 요구사항 `docs/MASTER_PROMPT.md`
 
 ## 위험 고지
 레버리지 선물 거래는 원금 전액 손실·강제청산 위험이 있습니다. 과거 성과는 미래 수익을 보장하지 않습니다.

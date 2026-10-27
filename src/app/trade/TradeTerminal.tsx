@@ -127,7 +127,7 @@ export function TradeTerminal({ config }: { config: PublicConfig }) {
           </div>
         )}
         <span className={cx("ml-auto rounded px-2 py-0.5 text-xs font-bold", config.network === "mainnet" ? "bg-down/20 text-down" : "bg-warn/15 text-warn")}>
-          {config.network === "mainnet" ? "MAINNET 실거래" : "TESTNET — 실제 자금 아님"}
+          {config.network === "testnet" ? "TESTNET — 실제 자금 아님" : config.mainnetTradingEnabled ? "MAINNET 실거래" : "MAINNET · 조회 전용 (주문 비활성)"}
         </span>
       </div>
       {config.network === "testnet" && (

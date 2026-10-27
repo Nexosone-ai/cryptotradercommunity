@@ -332,6 +332,11 @@ export const ledgerAccountEnum = pgEnum("ledger_account", [
   "PLATFORM_NET_REVENUE",
   "UNALLOCATED_PARTNER_RESERVE",
   "ROUNDING_REMAINDER",
+  // Partner video service (docs/PARTNER_VIDEO.md)
+  "COMPANY_BANK",
+  "PARTNER_CREDIT",
+  "VIDEO_SERVICE_REVENUE",
+  "PARTNER_INVOICE_PAYABLE",
 ]);
 
 export const ledgerEntries = pgTable("ledger_entries", {
@@ -484,3 +489,103 @@ export const swapFills = pgTable("swap_fills", {
   buyAmountFilled: uint256("buy_amount_filled").notNull(),
   createdAt: createdAt(),
 }, (t) => [uniqueIndex("swap_fills_tx_log_uq").on(t.chainId, t.txHash, t.logIndex)]);
+
+// ── Partner video service (docs/PARTNER_VIDEO.md) ──────────────────────────
+// Amounts are USD in e8 units, like the rest of the ledger.
+
+/** Bank-transfer credit top-up, credited only after an admin confirms receipt. */
+export const partnerCreditTopups = pgTable("partner_credit_topups", {
+  id: id(),
+  partnerUserId: text("partner_user_id").notNull().references(() => users.id),
+  requestedE8: e8("requested_e8").notNull(),
+  /** Code the partner writes in the bank transfer memo / depositor name. */
+  referenceCode: text("reference_code").notNull().unique(),
+  /** PENDING | APPROVED | REJECTED */
+  status: text("status").notNull(),
+  approvedE8: e8("approved_e8"),
+  /** KRW quote locked at request time (USD × rate + 10% VAT). */
+  fxRate: text("fx_rate"),
+  fxSource: text("fx_source"),
+  fxAsOf: timestamp("fx_as_of", { withTimezone: true }),
+  krwSupply: bigint("krw_supply", { mode: "bigint" }),
+  krwVat: bigint("krw_vat", { mode: "bigint" }),
+  krwTotal: bigint("krw_total", { mode: "bigint" }),
+  reviewedBy: text("reviewed_by").references(() => users.id),
+  reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+  note: text("note"),
+  createdAt: createdAt(),
+}, (t) => [check("topup_requested_pos", sql`${t.requestedE8} > 0`)]);
+
+export const videoJobs = pgTable("video_jobs", {
+  id: id(),
+  partnerUserId: text("partner_user_id").notNull().references(() => users.id),
+  model: text("model").notNull(),
+  resolution: text("resolution").notNull(),
+  clipSeconds: integer("clip_seconds").notNull(),
+  clipCount: integer("clip_count").notNull(),
+  sourceVideoUrl: text("source_video_url").notNull(),
+  frameUrl: text("frame_url"),
+  brief: text("brief"),
+  description: text("description"),
+  /** ANALYZING | GENERATING | COMPLETED | PARTIAL | FAILED */
+  status: text("status").notNull(),
+  /** Estimated fal.ai cost at list price. */
+  costE8: e8("cost_e8").notNull(),
+  /** Charged to the partner (cost × markup), split into analysis + per clip. */
+  priceE8: e8("price_e8").notNull(),
+  analysisPriceE8: e8("analysis_price_e8").notNull(),
+  clipPriceE8: e8("clip_price_e8").notNull(),
+  refundedE8: e8("refunded_e8").notNull().default(sql`0`),
+  rightsConfirmedAt: timestamp("rights_confirmed_at", { withTimezone: true }).notNull(),
+  error: text("error"),
+  createdAt: createdAt(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [index("video_jobs_partner_idx").on(t.partnerUserId)]);
+
+export const videoOutputs = pgTable("video_outputs", {
+  id: id(),
+  jobId: text("job_id").notNull().references(() => videoJobs.id),
+  idx: integer("idx").notNull(),
+  prompt: text("prompt").notNull(),
+  falRequestId: text("fal_request_id").unique(),
+  /** QUEUED | IN_PROGRESS | COMPLETED | FAILED */
+  status: text("status").notNull(),
+  videoUrl: text("video_url"),
+  error: text("error"),
+  refunded: boolean("refunded").notNull().default(false),
+  lastCheckedAt: timestamp("last_checked_at", { withTimezone: true }),
+  completedAt: timestamp("completed_at", { withTimezone: true }),
+  createdAt: createdAt(),
+}, (t) => [uniqueIndex("video_outputs_job_idx_uq").on(t.jobId, t.idx)]);
+
+/** Invoice a partner issues to its own customer; paid into the company account. */
+export const customerInvoices = pgTable("customer_invoices", {
+  id: id(),
+  partnerUserId: text("partner_user_id").notNull().references(() => users.id),
+  jobId: text("job_id").references(() => videoJobs.id),
+  issuerName: text("issuer_name").notNull(),
+  customerName: text("customer_name").notNull(),
+  description: text("description").notNull(),
+  amountE8: e8("amount_e8").notNull(),
+  /** Unguessable token for the public invoice link. */
+  publicToken: text("public_token").notNull().unique(),
+  referenceCode: text("reference_code").notNull().unique(),
+  /** ISSUED | PAID | CANCELLED */
+  status: text("status").notNull(),
+  paidConfirmedBy: text("paid_confirmed_by").references(() => users.id),
+  paidAt: timestamp("paid_at", { withTimezone: true }),
+  createdAt: createdAt(),
+}, (t) => [
+  index("customer_invoices_partner_idx").on(t.partnerUserId),
+  check("customer_invoices_amount_pos", sql`${t.amountE8} > 0`),
+]);
+
+/** Bank transfers from the company to a partner, against invoice earnings. */
+export const partnerSettlements = pgTable("partner_settlements", {
+  id: id(),
+  partnerUserId: text("partner_user_id").notNull().references(() => users.id),
+  amountE8: e8("amount_e8").notNull(),
+  bankReference: text("bank_reference").notNull(),
+  createdBy: text("created_by").notNull().references(() => users.id),
+  createdAt: createdAt(),
+}, (t) => [check("partner_settlements_amount_pos", sql`${t.amountE8} > 0`)]);
