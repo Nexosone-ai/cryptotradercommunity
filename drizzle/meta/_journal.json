@@ -50,6 +50,20 @@
       "when": 1793072226624,
       "tag": "0006_topup_krw_quote",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1793081871252,
+      "tag": "0007_bot_sources",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1793081872656,
+      "tag": "0008_bot_sources_rls",
+      "breakpoints": true
     }
   ]
 }

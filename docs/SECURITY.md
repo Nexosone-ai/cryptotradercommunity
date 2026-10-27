@@ -31,6 +31,8 @@
 - 보안 헤더: `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy`, `Permissions-Policy`.
 
 ## 봇 코드 실행
+- 전략 소스코드 첨부는 저장·열람 전용이다. 코드는 `bot_sources`에 sha256별로 보관되고 봇 설정에는 메타데이터와 해시만 남는다. 비공개(기본)는 소유자·ADMIN만, 공개는 누구나 열람. 화면에는 이스케이프된 텍스트로만 렌더링한다.
+- 개인키(64 hex)·시드 구문·API 키(sk-, AKIA, api_secret 할당)·PEM이 보이면 저장을 거부한다(휴리스틱 — 완전한 탐지는 아님).
 - Phase 1은 업로드 코드를 실행하지 않는다. 실행 방식은 템플릿/패키지/Webhook 선언만 받고 심사 대상으로 표시.
 - Phase 2: 격리 워커(컨테이너/Firecracker), egress 제한, CPU·메모리·시간 제한, 서명된 패키지·버전 고정, 시크릿 비접근, kill switch.
 

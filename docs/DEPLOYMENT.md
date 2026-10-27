@@ -23,6 +23,7 @@ DATABASE_URL=postgres://... npm run db:migrate
 | 변수 | 필수 | 설명 |
 |---|---|---|
 | `APP_URL` | 예 | `https://cryptotradercommunity.org` — SIWE 도메인 검증·추천 링크 |
+| `REDIRECT_HOSTS` | — | APP_URL로 영구 리디렉트할 옛 호스트(예: `cryptotradercommunity.vercel.app`) |
 | `DATABASE_URL` | 프로덕션 예 | 없으면 PGlite(개발 전용) |
 | `SESSION_SECRET` | 프로덕션 예 | 32자 이상 랜덤 |
 | `ADMIN_WALLET_ADDRESS` | 예 | 최초 관리자 |

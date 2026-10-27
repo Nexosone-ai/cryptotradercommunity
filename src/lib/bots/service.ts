@@ -5,10 +5,11 @@ import type { SessionUser } from "../auth/session";
 import { grantRole } from "../auth/service";
 import { getConfig } from "../config";
 import type { Db } from "../db/client";
-import { botReviewLogs, botSubscriptions, bots, botVersions } from "../db/schema";
+import { botReviewLogs, botSources, botSubscriptions, bots, botVersions } from "../db/schema";
 import { badRequest, conflict, forbidden, notFound } from "../http";
 import { assessBotRisk } from "./risk";
-import { botConfigSchema, type BotConfig } from "./schema";
+import { botConfigSchema, type BotConfig, type StoredBotConfig } from "./schema";
+import { normalizeSource, pineMeta, type SourceInput } from "./source";
 
 export type BotStatus = (typeof bots.$inferSelect)["status"];
 export type BotRow = typeof bots.$inferSelect;
@@ -46,13 +47,44 @@ function canonicalJson(value: unknown): string {
   );
 }
 
-export function hashConfig(config: BotConfig): string {
+/** Separates the source code from the config; the config keeps only metadata + hash. */
+export function splitSource(config: BotConfig): { stored: StoredBotConfig; source: { code: string; language: string; sha256: string } | null } {
+  const { source, ...rest } = config;
+  if (!source) return { stored: rest, source: null };
+  const code = normalizeSource(source.code);
+  const sha256 = createHash("sha256").update(code).digest("hex");
+  return {
+    stored: {
+      ...rest,
+      source: {
+        language: source.language,
+        visibility: source.visibility,
+        sha256,
+        bytes: Buffer.byteLength(code),
+        lines: code.split("\n").length - 1,
+        pine: source.language === "PINESCRIPT" ? pineMeta(code) : null,
+      },
+    },
+    source: { code, language: source.language, sha256 },
+  };
+}
+
+async function saveSource(tx: Pick<Db, "insert">, botId: string, userId: string, source: { code: string; language: string; sha256: string } | null) {
+  if (!source) return;
+  await tx
+    .insert(botSources)
+    .values({ botId, sha256: source.sha256, language: source.language, code: source.code, bytes: Buffer.byteLength(source.code), createdBy: userId })
+    .onConflictDoNothing();
+}
+
+export function hashConfig(config: BotConfig | StoredBotConfig): string {
   return createHash("sha256").update(canonicalJson(config)).digest("hex");
 }
 
 /** Fields whose change after approval requires a new review. */
-function materialPart(c: BotConfig) {
+function materialPart(c: StoredBotConfig) {
   return {
+    sourceSha256: c.source?.sha256 ?? null,
     strategyType: c.strategyType,
     markets: c.markets,
     direction: c.direction,
@@ -73,12 +105,13 @@ async function loadOwnedBot(db: Db, user: SessionUser, botId: string) {
 }
 
 export async function createBot(db: Db, user: SessionUser, input: unknown) {
-  const config = botConfigSchema.parse(input);
+  const parsed = botConfigSchema.parse(input);
+  const { stored: config, source } = splitSource(parsed);
   const cfg = getConfig();
   if (config.feeTenthsBp > cfg.platformMaxFeeTenthsBp) {
     throw badRequest("FEE_ABOVE_PLATFORM_CAP", "추가 Builder Fee가 플랫폼 상한을 초과합니다.");
   }
-  const risk = assessBotRisk(config, cfg.platformMaxFeeTenthsBp);
+  const risk = assessBotRisk(parsed, cfg.platformMaxFeeTenthsBp);
   const [taken] = await db.select({ id: bots.id }).from(bots).where(eq(bots.slug, config.slug)).limit(1);
   if (taken) throw conflict("SLUG_TAKEN", "이미 사용 중인 slug입니다.");
 
@@ -97,6 +130,7 @@ export async function createBot(db: Db, user: SessionUser, input: unknown) {
         riskLevel: risk.level,
       })
       .returning();
+    await saveSource(tx, bot.id, user.id, source);
     await tx.insert(botVersions).values({
       botId: bot.id,
       version: 1,
@@ -121,8 +155,9 @@ export async function updateBot(db: Db, user: SessionUser, botId: string, input:
   if (["SUBMITTED", "UNDER_REVIEW", "SUSPENDED", "ARCHIVED"].includes(bot.status)) {
     throw conflict("BOT_LOCKED", "심사 중이거나 중단/보관된 봇은 수정할 수 없습니다.");
   }
-  const next = botConfigSchema.parse(input);
-  const prev = bot.config as BotConfig;
+  const parsedNext = botConfigSchema.parse(input);
+  const { stored: next, source } = splitSource(parsedNext);
+  const prev = bot.config as StoredBotConfig;
   if (next.slug !== bot.slug) throw badRequest("SLUG_IMMUTABLE", "slug는 생성 후 변경할 수 없습니다.");
   const cfg = getConfig();
   if (next.feeTenthsBp > cfg.platformMaxFeeTenthsBp) {
@@ -130,7 +165,7 @@ export async function updateBot(db: Db, user: SessionUser, botId: string, input:
   }
   if (hashConfig(next) === hashConfig(prev)) return { bot, changed: false };
 
-  const risk = assessBotRisk(next, cfg.platformMaxFeeTenthsBp);
+  const risk = assessBotRisk(parsedNext, cfg.platformMaxFeeTenthsBp);
   const approvedLike = ["APPROVED", "LIVE", "PAUSED"].includes(bot.status);
   const material = canonicalJson(materialPart(next)) !== canonicalJson(materialPart(prev));
   const nextStatus: BotStatus = approvedLike && material ? "SUBMITTED" : bot.status;
@@ -157,6 +192,7 @@ export async function updateBot(db: Db, user: SessionUser, botId: string, input:
       })
       .where(eq(bots.id, bot.id))
       .returning();
+    await saveSource(tx, bot.id, user.id, source);
     await tx.insert(botVersions).values({
       botId: bot.id,
       version,
@@ -351,3 +387,22 @@ export async function listPendingBots(db: Db) {
 export async function listBotVersions(db: Db, botId: string) {
   return db.select().from(botVersions).where(eq(botVersions.botId, botId)).orderBy(desc(botVersions.version));
 }
+
+/**
+ * Source code of the bot's current version for this viewer: PUBLIC sources
+ * are visible to everyone; PRIVATE ones only to the owner and admins.
+ */
+export async function getBotSource(db: Db, bot: BotRow, viewer: SessionUser | null) {
+  const meta = (bot.config as StoredBotConfig).source;
+  if (!meta) return null;
+  const canSee = meta.visibility === "PUBLIC" || viewer?.id === bot.ownerUserId || Boolean(viewer?.roles.includes("ADMIN"));
+  if (!canSee) return { meta, code: null };
+  const [row] = await db
+    .select({ code: botSources.code })
+    .from(botSources)
+    .where(and(eq(botSources.botId, bot.id), eq(botSources.sha256, meta.sha256)))
+    .limit(1);
+  return { meta, code: row?.code ?? null };
+}
+
+export type { SourceInput };

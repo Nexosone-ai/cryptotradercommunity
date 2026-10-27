@@ -14,6 +14,8 @@ import {
 } from "@/lib/bots/schema";
 import { apiFetch, ClientApiError } from "@/lib/client-api";
 import { checksum, feeLabel } from "@/lib/format";
+import type { SourceMeta } from "@/lib/bots/source";
+import { SourceEditor } from "./SourceEditor";
 
 type Form = Omit<BotConfigInput, "consents" | "risk"> & {
   risk: Omit<BotConfigInput["risk"], "emergencyStop"> & { emergencyStop: boolean };
@@ -60,9 +62,16 @@ export function BotWizard({ ownerAddress, platformMaxFeeTenthsBp, editId }: { ow
 
   useEffect(() => {
     if (!editId) return;
-    apiFetch<{ bot: { id: string; slug: string; status: string; config: Form } }>(`/api/bots/${editId}`)
+    apiFetch<{
+      bot: { id: string; slug: string; status: string; config: Omit<Form, "source"> & { source?: SourceMeta } };
+      source?: { meta: SourceMeta; code: string | null } | null;
+    }>(`/api/bots/${editId}`)
       .then((d) => {
-        setF({ ...EMPTY, ...d.bot.config, consents: { terms: false, risk: false, performancePolicy: false } });
+        // The stored config carries only source metadata; the editable code comes from d.source.
+        const config: Omit<Form, "source"> = { ...d.bot.config };
+        delete (config as { source?: unknown }).source;
+        const source = d.source?.code ? { language: d.source.meta.language, visibility: d.source.meta.visibility, code: d.source.code } : undefined;
+        setF({ ...EMPTY, ...config, source, consents: { terms: false, risk: false, performancePolicy: false } });
         setSaved({ id: d.bot.id, slug: d.bot.slug, status: d.bot.status });
       })
       .catch((e) => setError(e.message));
@@ -277,6 +286,7 @@ export function BotWizard({ ownerAddress, platformMaxFeeTenthsBp, editId }: { ow
                 업로드한 임의 코드는 프로덕션 서버에서 실행하지 않습니다. 패키지·Webhook은 샌드박스 격리와 보안 심사 후 Phase 2에서 활성화됩니다.
               </p>
             </Field>
+            <SourceEditor value={f.source as never} onChange={(v) => set("source", v)} error={err("source")} />
             <Field label="개발자 소개">
               <textarea rows={3} value={f.developer.bio} onChange={(e) => set("developer", { ...f.developer, bio: e.target.value })} />
             </Field>

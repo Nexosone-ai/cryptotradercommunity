@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { HL_MAX_PERP_BUILDER_FEE_TENTHS_BP } from "../config";
+import { sourceInputSchema, type SourceMeta } from "./source";
 
 export const STRATEGY_TYPES = ["TREND_FOLLOWING", "GRID", "MARTINGALE", "TP_TRADING", "ARBITRAGE", "CUSTOM"] as const;
 export const STRATEGY_LABELS: Record<(typeof STRATEGY_TYPES)[number], string> = {
@@ -57,6 +58,8 @@ export const botConfigSchema = z
       telegramUrl: optionalUrl,
     }),
     feeTenthsBp: z.number().int().min(0).max(HL_MAX_PERP_BUILDER_FEE_TENTHS_BP),
+    /** Optional strategy source code (never executed; see lib/bots/source.ts). */
+    source: sourceInputSchema.optional(),
     consents: z.object({
       terms: z.literal(true, "이용약관 동의가 필요합니다."),
       risk: z.literal(true, "위험 고지 동의가 필요합니다."),
@@ -74,5 +77,7 @@ export const botConfigSchema = z
   });
 
 export type BotConfig = z.infer<typeof botConfigSchema>;
+/** What is stored in bots.config: the source is replaced by its metadata + hash. */
+export type StoredBotConfig = Omit<BotConfig, "source"> & { source?: SourceMeta };
 /** Any client-supplied owner address is ignored; the server sets it. */
 export type BotConfigInput = z.input<typeof botConfigSchema>;

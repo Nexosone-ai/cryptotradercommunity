@@ -1,0 +1,664 @@
+//@version=6
+indicator("RSI DIV + LTF DELTA + EMA FILTER V11", overlay=true)
+
+//====================================================
+// 1. SETTINGS
+//====================================================
+
+rsiLen = input.int(14, "RSI Length", minval=2)
+
+overBought = input.float(70.0, "LONG 기준 과매수")
+overSold = input.float(30.0, "SHORT 기준 과매도")
+
+pivotLen = input.int(5, "Divergence Pivot", minval=2)
+
+maxSetupBars = input.int(60, "Setup 최대 유지봉", minval=10)
+minCorrectionBars = input.int(3, "최소 조정봉", minval=1)
+
+// Lower timeframe
+lowerTF = input.timeframe("1", "Volume Delta Lower TF")
+
+minDeltaPercent = input.float(
+     5.0,
+     "Minimum Delta %",
+     minval=0.0,
+     step=1.0)
+
+// EMA
+ema20Len = input.int(20, "EMA 20")
+ema200Len = input.int(200, "EMA 200")
+
+// EMA 필터 강도
+useEMAFilter = input.bool(true, "EMA 방향 필터 사용")
+
+// EMA200까지 필수로 확인할지
+strictEMA = input.bool(false, "EMA200 강한 필터")
+
+//====================================================
+// 2. RSI / EMA
+//====================================================
+
+rsi = ta.rsi(close, rsiLen)
+
+ema20 = ta.ema(close, ema20Len)
+ema200 = ta.ema(close, ema200Len)
+
+//====================================================
+// 3. LOWER TIMEFRAME ARRAYS
+//====================================================
+
+array<float> ltfOpen =
+     request.security_lower_tf(
+         syminfo.tickerid,
+         lowerTF,
+         open)
+
+array<float> ltfClose =
+     request.security_lower_tf(
+         syminfo.tickerid,
+         lowerTF,
+         close)
+
+array<float> ltfVolume =
+     request.security_lower_tf(
+         syminfo.tickerid,
+         lowerTF,
+         volume)
+
+//====================================================
+// 4. LOWER-TF VOLUME DELTA
+//====================================================
+
+float buyVolume = 0.0
+float sellVolume = 0.0
+
+int n = array.size(ltfClose)
+
+if n > 0 and array.size(ltfOpen) == n and array.size(ltfVolume) == n
+
+    for i = 0 to n - 1
+
+        float o = array.get(ltfOpen, i)
+        float c = array.get(ltfClose, i)
+        float v = array.get(ltfVolume, i)
+
+        if c > o
+
+            buyVolume += v
+
+        else if c < o
+
+            sellVolume += v
+
+        else if i > 0
+
+            float previousClose =
+                 array.get(
+                     ltfClose,
+                     i - 1)
+
+            if c > previousClose
+
+                buyVolume += v
+
+            else if c < previousClose
+
+                sellVolume += v
+
+//====================================================
+// 5. DELTA
+//====================================================
+
+volumeDelta =
+     buyVolume -
+     sellVolume
+
+totalVolume =
+     buyVolume +
+     sellVolume
+
+deltaPercent =
+     totalVolume > 0 ?
+     volumeDelta /
+     totalVolume *
+     100.0 :
+     0.0
+
+//----------------------------------------------------
+// LONG
+//----------------------------------------------------
+
+buyDeltaOK =
+     volumeDelta > 0 and
+     deltaPercent >= minDeltaPercent
+
+//----------------------------------------------------
+// SHORT
+//----------------------------------------------------
+
+sellDeltaOK =
+     volumeDelta < 0 and
+     deltaPercent <= -minDeltaPercent
+
+//====================================================
+// 6. EMA DIRECTION
+//====================================================
+
+ema20Up =
+     ema20 > ema20[1]
+
+ema20Down =
+     ema20 < ema20[1]
+
+ema200Up =
+     ema200 > ema200[1]
+
+ema200Down =
+     ema200 < ema200[1]
+
+//====================================================
+// 7. EMA FILTER
+//
+// 중요:
+// EMA 돌파를 기다리지 않음.
+//
+// EMA는 방향 확인만 담당.
+//====================================================
+
+//----------------------------------------------------
+// 기본 LONG
+//----------------------------------------------------
+
+basicLongEMA =
+     ema20Up or
+     close > ema20
+
+//----------------------------------------------------
+// 기본 SHORT
+//----------------------------------------------------
+
+basicShortEMA =
+     ema20Down or
+     close < ema20
+
+//----------------------------------------------------
+// 강한 LONG
+//----------------------------------------------------
+
+strongLongEMA =
+     close > ema200 and
+     ema200Up
+
+//----------------------------------------------------
+// 강한 SHORT
+//----------------------------------------------------
+
+strongShortEMA =
+     close < ema200 and
+     ema200Down
+
+//----------------------------------------------------
+// 최종 EMA 필터
+//----------------------------------------------------
+
+longEMAOK =
+     not useEMAFilter or
+     (basicLongEMA and
+     (not strictEMA or strongLongEMA))
+
+shortEMAOK =
+     not useEMAFilter or
+     (basicShortEMA and
+     (not strictEMA or strongShortEMA))
+
+//====================================================
+// 8. SETUP STATE
+//
+// LONG  = 과매수가 먼저
+// SHORT = 과매도가 먼저
+//====================================================
+
+var bool longArmed = false
+var bool shortArmed = false
+
+var int longExtremeBar = na
+var int shortExtremeBar = na
+
+//====================================================
+// 9. LONG START
+//
+// RSI >= 70
+//====================================================
+
+if rsi >= overBought and not longArmed
+
+    longArmed := true
+    longExtremeBar := bar_index
+
+    shortArmed := false
+    shortExtremeBar := na
+
+//====================================================
+// 10. SHORT START
+//
+// RSI <= 30
+//====================================================
+
+if rsi <= overSold and not shortArmed
+
+    shortArmed := true
+    shortExtremeBar := bar_index
+
+    longArmed := false
+    longExtremeBar := na
+
+//====================================================
+// 11. CORRECTION
+//====================================================
+
+longCorrectionOK =
+     longArmed and
+     not na(longExtremeBar) and
+     bar_index -
+     longExtremeBar >=
+     minCorrectionBars
+
+shortCorrectionOK =
+     shortArmed and
+     not na(shortExtremeBar) and
+     bar_index -
+     shortExtremeBar >=
+     minCorrectionBars
+
+//====================================================
+// 12. EXPIRE SETUP
+//====================================================
+
+if longArmed and not na(longExtremeBar)
+
+    if bar_index - longExtremeBar > maxSetupBars
+
+        longArmed := false
+        longExtremeBar := na
+
+if shortArmed and not na(shortExtremeBar)
+
+    if bar_index - shortExtremeBar > maxSetupBars
+
+        shortArmed := false
+        shortExtremeBar := na
+
+//====================================================
+// 13. PRICE PIVOTS
+//====================================================
+
+priceLow =
+     ta.pivotlow(
+         low,
+         pivotLen,
+         pivotLen)
+
+priceHigh =
+     ta.pivothigh(
+         high,
+         pivotLen,
+         pivotLen)
+
+//====================================================
+// 14. LONG BULLISH DIVERGENCE
+//
+// 과매수 이후:
+//
+// PRICE = Lower Low
+// RSI   = Higher Low
+//====================================================
+
+var float longPriceLow1 = na
+var float longPriceLow2 = na
+
+var float longRSILow1 = na
+var float longRSILow2 = na
+
+if longArmed and not na(priceLow)
+
+    int pBar =
+         bar_index -
+         pivotLen
+
+    if not na(longExtremeBar) and pBar > longExtremeBar
+
+        longPriceLow1 :=
+             longPriceLow2
+
+        longRSILow1 :=
+             longRSILow2
+
+        longPriceLow2 :=
+             low[pivotLen]
+
+        longRSILow2 :=
+             rsi[pivotLen]
+
+//----------------------------------------------------
+
+bullDiv =
+     longCorrectionOK and
+     not na(longPriceLow1) and
+     not na(longPriceLow2) and
+     not na(longRSILow1) and
+     not na(longRSILow2) and
+     longPriceLow2 <
+     longPriceLow1 and
+     longRSILow2 >
+     longRSILow1
+
+//====================================================
+// 15. SHORT BEARISH DIVERGENCE
+//
+// 과매도 이후:
+//
+// PRICE = Higher High
+// RSI   = Lower High
+//====================================================
+
+var float shortPriceHigh1 = na
+var float shortPriceHigh2 = na
+
+var float shortRSIHigh1 = na
+var float shortRSIHigh2 = na
+
+if shortArmed and not na(priceHigh)
+
+    int pBar =
+         bar_index -
+         pivotLen
+
+    if not na(shortExtremeBar) and pBar > shortExtremeBar
+
+        shortPriceHigh1 :=
+             shortPriceHigh2
+
+        shortRSIHigh1 :=
+             shortRSIHigh2
+
+        shortPriceHigh2 :=
+             high[pivotLen]
+
+        shortRSIHigh2 :=
+             rsi[pivotLen]
+
+//----------------------------------------------------
+
+bearDiv =
+     shortCorrectionOK and
+     not na(shortPriceHigh1) and
+     not na(shortPriceHigh2) and
+     not na(shortRSIHigh1) and
+     not na(shortRSIHigh2) and
+     shortPriceHigh2 >
+     shortPriceHigh1 and
+     shortRSIHigh2 <
+     shortRSIHigh1
+
+//====================================================
+// 16. DIVERGENCE MEMORY
+//====================================================
+
+var bool bullDivReady = false
+var bool bearDivReady = false
+
+if bullDiv
+
+    bullDivReady := true
+
+if bearDiv
+
+    bearDivReady := true
+
+//====================================================
+// 17. LONG CORRECTION HIGHS
+//
+// 하락 추세선 생성
+//====================================================
+
+var float longHigh1 = na
+var float longHigh2 = na
+
+var int longHighBar1 = na
+var int longHighBar2 = na
+
+if longArmed and not na(priceHigh)
+
+    int pBar =
+         bar_index -
+         pivotLen
+
+    if not na(longExtremeBar) and pBar > longExtremeBar
+
+        longHigh1 :=
+             longHigh2
+
+        longHighBar1 :=
+             longHighBar2
+
+        longHigh2 :=
+             high[pivotLen]
+
+        longHighBar2 :=
+             pBar
+
+//====================================================
+// 18. LONG DOWN TRENDLINE
+//====================================================
+
+float downTrend = na
+
+validDownTrend =
+     longArmed and
+     not na(longHigh1) and
+     not na(longHigh2) and
+     not na(longHighBar1) and
+     not na(longHighBar2) and
+     longHighBar2 >
+     longHighBar1 and
+     longHigh2 <
+     longHigh1
+
+if validDownTrend
+
+    float slope =
+         (longHigh2 - longHigh1) /
+         (longHighBar2 - longHighBar1)
+
+    downTrend :=
+         longHigh2 +
+         slope *
+         (bar_index - longHighBar2)
+
+//====================================================
+// 19. SHORT CORRECTION LOWS
+//
+// 상승 추세선 생성
+//====================================================
+
+var float shortLow1 = na
+var float shortLow2 = na
+
+var int shortLowBar1 = na
+var int shortLowBar2 = na
+
+if shortArmed and not na(priceLow)
+
+    int pBar =
+         bar_index -
+         pivotLen
+
+    if not na(shortExtremeBar) and pBar > shortExtremeBar
+
+        shortLow1 :=
+             shortLow2
+
+        shortLowBar1 :=
+             shortLowBar2
+
+        shortLow2 :=
+             low[pivotLen]
+
+        shortLowBar2 :=
+             pBar
+
+//====================================================
+// 20. SHORT UP TRENDLINE
+//====================================================
+
+float upTrend = na
+
+validUpTrend =
+     shortArmed and
+     not na(shortLow1) and
+     not na(shortLow2) and
+     not na(shortLowBar1) and
+     not na(shortLowBar2) and
+     shortLowBar2 >
+     shortLowBar1 and
+     shortLow2 >
+     shortLow1
+
+if validUpTrend
+
+    float slope =
+         (shortLow2 - shortLow1) /
+         (shortLowBar2 - shortLowBar1)
+
+    upTrend :=
+         shortLow2 +
+         slope *
+         (bar_index - shortLowBar2)
+
+//====================================================
+// 21. TREND BREAK
+//
+// ★ 돌파봉에서 즉시 판단 ★
+//====================================================
+
+longBreak =
+     validDownTrend and
+     ta.crossover(
+         close,
+         downTrend)
+
+shortBreak =
+     validUpTrend and
+     ta.crossunder(
+         close,
+         upTrend)
+
+//====================================================
+// 22. FINAL LONG
+//====================================================
+
+longSignal =
+     longArmed and
+     bullDivReady and
+     longBreak and
+     buyDeltaOK and
+     longEMAOK
+
+//====================================================
+// 23. FINAL SHORT
+//====================================================
+
+shortSignal =
+     shortArmed and
+     bearDivReady and
+     shortBreak and
+     sellDeltaOK and
+     shortEMAOK
+
+//====================================================
+// 24. RESET AFTER SIGNAL
+//====================================================
+
+if longSignal
+
+    longArmed := false
+    bullDivReady := false
+    longExtremeBar := na
+
+    longPriceLow1 := na
+    longPriceLow2 := na
+
+    longRSILow1 := na
+    longRSILow2 := na
+
+    longHigh1 := na
+    longHigh2 := na
+
+if shortSignal
+
+    shortArmed := false
+    bearDivReady := false
+    shortExtremeBar := na
+
+    shortPriceHigh1 := na
+    shortPriceHigh2 := na
+
+    shortRSIHigh1 := na
+    shortRSIHigh2 := na
+
+    shortLow1 := na
+    shortLow2 := na
+
+//====================================================
+// 25. EMA DISPLAY
+//====================================================
+
+plot(
+     ema20,
+     title="EMA 20",
+     color=color.fuchsia,
+     linewidth=2)
+
+plot(
+     ema200,
+     title="EMA 200",
+     color=color.black,
+     linewidth=3)
+
+//====================================================
+// 26. ONLY FINAL SIGNALS
+//====================================================
+
+plotshape(
+     longSignal,
+     title="LONG",
+     style=shape.labelup,
+     location=location.belowbar,
+     color=color.lime,
+     textcolor=color.black,
+     text="LONG",
+     size=size.normal)
+
+plotshape(
+     shortSignal,
+     title="SHORT",
+     style=shape.labeldown,
+     location=location.abovebar,
+     color=color.red,
+     textcolor=color.white,
+     text="SHORT",
+     size=size.normal)
+
+//====================================================
+// 27. ALERT
+//====================================================
+
+alertcondition(
+     longSignal,
+     title="LONG SIGNAL",
+     message="OB -> Correction -> Bull Div -> Trend Break -> Positive LTF Delta -> LONG")
+
+alertcondition(
+     shortSignal,
+     title="SHORT SIGNAL",
+     message="OS -> Correction -> Bear Div -> Trend Break -> Negative LTF Delta -> SHORT")

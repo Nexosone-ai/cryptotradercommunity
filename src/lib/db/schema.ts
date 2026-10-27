@@ -118,6 +118,18 @@ export const botVersions = pgTable("bot_versions", {
   createdAt: createdAt(),
 }, (t) => [uniqueIndex("bot_versions_bot_version_uq").on(t.botId, t.version)]);
 
+/** Strategy source code attached to a bot, one row per distinct version (never executed). */
+export const botSources = pgTable("bot_sources", {
+  id: id(),
+  botId: text("bot_id").notNull().references(() => bots.id),
+  sha256: text("sha256").notNull(),
+  language: text("language").notNull(),
+  code: text("code").notNull(),
+  bytes: integer("bytes").notNull(),
+  createdBy: text("created_by").notNull().references(() => users.id),
+  createdAt: createdAt(),
+}, (t) => [uniqueIndex("bot_sources_bot_sha_uq").on(t.botId, t.sha256)]);
+
 export const botReviewLogs = pgTable("bot_review_logs", {
   id: id(),
   botId: text("bot_id").notNull().references(() => bots.id),

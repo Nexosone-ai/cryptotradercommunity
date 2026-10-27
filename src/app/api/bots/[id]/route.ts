@@ -1,6 +1,6 @@
 import { apiContext, mutationContext } from "@/lib/api";
 import { getCurrentUser } from "@/lib/auth/current";
-import { getBotForViewer, listBotVersions, updateBot } from "@/lib/bots/service";
+import { getBotForViewer, getBotSource, listBotVersions, updateBot } from "@/lib/bots/service";
 import { handler, json, notFound, readJson } from "@/lib/http";
 import { getBotMetrics } from "@/lib/performance/metrics";
 
@@ -14,6 +14,8 @@ export const GET = handler(async (_req: Request, ctx: RouteContext<"/api/bots/[i
     bot: found.bot,
     metrics: await getBotMetrics(db, found.bot.id),
     versions: found.isOwner || found.isAdmin ? await listBotVersions(db, found.bot.id) : undefined,
+    // Code only for PUBLIC sources, the owner, or admins; otherwise metadata only.
+    source: await getBotSource(db, found.bot, viewer),
   });
 });
 

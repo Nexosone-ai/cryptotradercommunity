@@ -7,7 +7,8 @@ import { Badge, Card, Notice, Stat } from "@/components/ui";
 import { getCurrentUser } from "@/lib/auth/current";
 import { assessBotRisk } from "@/lib/bots/risk";
 import { EXECUTION_LABELS, STRATEGY_LABELS, type BotConfig } from "@/lib/bots/schema";
-import { getBotForViewer, listBotVersions } from "@/lib/bots/service";
+import { getBotForViewer, getBotSource, listBotVersions } from "@/lib/bots/service";
+import { BotSourcePanel } from "@/components/BotSourcePanel";
 import { getConfig } from "@/lib/config";
 import { getDb } from "@/lib/db/client";
 import { botSubscriptions } from "@/lib/db/schema";
@@ -55,6 +56,7 @@ export default async function BotDetail({ params, searchParams }: PageProps<"/bo
         .limit(1)
     : [];
   const versions = isOwner || isAdmin ? await listBotVersions(db, bot.id) : [];
+  const source = await getBotSource(db, bot, viewer);
   const curve = fills
     .slice()
     .sort((a, b) => a.time.getTime() - b.time.getTime())
@@ -163,8 +165,15 @@ export default async function BotDetail({ params, searchParams }: PageProps<"/bo
               </div>
             </dl>
             <p className="mt-4 whitespace-pre-wrap text-sm leading-relaxed text-text/90">{config.description}</p>
-            <p className="mt-3 text-xs text-faint">전략 소스코드는 공개되지 않습니다. 공개 범위는 지갑 주소·설정·실거래 성과입니다.</p>
+            <p className="mt-3 text-xs text-faint">공개 범위: 지갑 주소·설정·실거래 성과. 소스코드는 개발자가 공개로 설정한 경우에만 보입니다.</p>
           </Card>
+
+          {source && (
+            <Card>
+              <h2 className="mb-3 font-semibold">전략 소스코드</h2>
+              <BotSourcePanel meta={source.meta} code={source.code} />
+            </Card>
+          )}
 
           <Card>
             <h2 className="font-semibold">최근 체결 (이 봇의 주문만)</h2>

@@ -25,6 +25,17 @@ const nextConfig: NextConfig = {
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },
+  // Old hosts (e.g. the *.vercel.app production alias) permanently redirect to
+  // APP_URL, so wallet sign-in always happens on the domain the server signs for.
+  async redirects() {
+    const target = process.env.APP_URL;
+    const hosts = (process.env.REDIRECT_HOSTS || "").split(",").map((h) => h.trim()).filter(Boolean);
+    if (!target || hosts.length === 0) return [];
+    const origin = new URL(target).origin;
+    return hosts
+      .filter((host) => host !== new URL(target).host)
+      .map((host) => ({ source: "/:path*", has: [{ type: "host" as const, value: host }], destination: `${origin}/:path*`, permanent: true }));
+  },
 };
 
 export default nextConfig;
