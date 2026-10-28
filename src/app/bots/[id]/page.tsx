@@ -16,7 +16,7 @@ import { dateTime, feeLabel, STATUS_LABELS, usd } from "@/lib/format";
 import { botFills, computeMetrics } from "@/lib/performance/metrics";
 import { getI18n } from "@/lib/i18n-server";
 import { and, eq } from "drizzle-orm";
-import { OwnerActions, SubscribePanel } from "./BotActions";
+import { OwnerActions, PublishBanner, SubscribePanel } from "./BotActions";
 import { PnlChart } from "./PnlChart";
 
 export const dynamic = "force-dynamic";
@@ -88,7 +88,16 @@ export default async function BotDetail({ params, searchParams }: PageProps<"/bo
         </div>
       </div>
 
-      {(isOwner || isAdmin) && bot.status !== "LIVE" && bot.status !== "PAUSED" && (
+      {isOwner && bot.status === "APPROVED" ? (
+        <PublishBanner botId={bot.id} />
+      ) : isAdmin && bot.status === "APPROVED" ? (
+        <Notice tone="info">
+          {t(
+            "Approved. It appears in the bot market only after the owner presses Publish to market (LIVE).",
+            "승인됨. 소유자가 마켓에 공개 (LIVE)를 눌러야 봇 마켓에 노출됩니다.",
+          )}
+        </Notice>
+      ) : (isOwner || isAdmin) && bot.status !== "LIVE" && bot.status !== "PAUSED" && (
         <Notice tone="info">
           {t(
             `This bot is not public (${L(STATUS_LABELS[bot.status])}). Only the owner and admins can see it.`,

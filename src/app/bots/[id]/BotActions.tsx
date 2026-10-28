@@ -170,3 +170,24 @@ export function OwnerActions({ botId, status }: { botId: string; status: string 
     </div>
   );
 }
+
+/** Shown to the owner of an APPROVED bot: approval alone doesn't list it, so say so and offer the publish button. */
+export function PublishBanner({ botId }: { botId: string }) {
+  const { t, L } = useI18n();
+  const { busy, error, run } = useAction();
+  return (
+    <div className="space-y-3 rounded-xl border border-accent/50 bg-accent/10 p-4 text-sm" data-testid="publish-banner">
+      <p className="font-semibold text-text">{t("Approved — not in the bot market yet", "승인 완료 — 아직 봇 마켓에 보이지 않습니다")}</p>
+      <p className="text-muted">
+        {t(
+          "Approval doesn't publish the bot. Press Publish to market (LIVE) to list it in the bot market so users can subscribe. You can pause it again at any time.",
+          "승인만으로는 공개되지 않습니다. 마켓에 공개 (LIVE)를 눌러야 봇 마켓에 노출되고 사용자가 구독할 수 있습니다. 공개 후에도 언제든 일시 중지할 수 있습니다.",
+        )}
+      </p>
+      <button className={buttonClass("primary", "sm")} disabled={busy} onClick={() => run(`/api/bots/${botId}/start`)}>
+        {t("Publish to market (LIVE)", "마켓에 공개 (LIVE)")}
+      </button>
+      {error && <Notice tone="down">{L(error)}</Notice>}
+    </div>
+  );
+}

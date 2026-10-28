@@ -119,7 +119,13 @@ test("bot lifecycle: forged owner ignored, hidden until approved, admin approves
 
   // Approved but not yet live → still hidden; owner publishes → visible with verified wallet.
   expect((await anon.request.get(`/api/bots/${slug}`)).status()).toBe(404);
-  expect((await ro.post(`/api/bots/${bot.id}/start`)).status()).toBe(200);
+  await owner.page.goto("/portfolio");
+  await expect(owner.page.getByRole("link", { name: "공개하기 →" })).toBeVisible();
+  await owner.page.goto(`/bots/${slug}`);
+  const banner = owner.page.getByTestId("publish-banner");
+  await expect(banner).toContainText("아직 봇 마켓에 보이지 않습니다");
+  await banner.getByRole("button", { name: "마켓에 공개 (LIVE)" }).click();
+  await expect(banner).toBeHidden();
   const page = await anon.newPage();
   await page.goto(`/bots/${slug}`);
   await expect(page.getByRole("heading", { name: "E2E Trend" })).toBeVisible();

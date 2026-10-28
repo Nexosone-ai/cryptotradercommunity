@@ -150,7 +150,14 @@ function Review({ adminId }: { adminId: string }) {
                   {t("Start review", "심사 시작")}
                 </button>
               )}
-              <button className={buttonClass("primary", "sm")} disabled={m.busy} onClick={() => m.run(`/api/admin/bots/${b.id}/approve`, {}, t("Approved", "승인했습니다"))}>
+              <button className={buttonClass("primary", "sm")} disabled={m.busy} onClick={() => m.run(
+                    `/api/admin/bots/${b.id}/approve`,
+                    {},
+                    t(
+                      "Approved. The owner must press Publish to market (LIVE) on the bot page before it appears in the bot market.",
+                      "승인했습니다. 소유자가 봇 페이지에서 마켓에 공개 (LIVE)를 눌러야 봇 마켓에 노출됩니다.",
+                    ),
+                  )}>
                 {t("Approve", "승인")}
               </button>
               <button

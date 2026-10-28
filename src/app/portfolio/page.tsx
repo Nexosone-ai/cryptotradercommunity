@@ -147,6 +147,16 @@ export default async function PortfolioPage() {
                 hint={t("Automatic payouts in Phase 2", "자동 지급은 Phase 2")}
               />
             </div>
+            {myBots.some((b) => b.status === "APPROVED") && (
+              <div className="mb-3">
+                <Notice tone="info">
+                  {t(
+                    "Approved bots aren't in the bot market until you publish them. Open the bot and press Publish to market (LIVE).",
+                    "승인된 봇은 공개하기 전까지 봇 마켓에 보이지 않습니다. 봇을 열고 마켓에 공개 (LIVE)를 누르세요.",
+                  )}
+                </Notice>
+              </div>
+            )}
             <div className="overflow-x-auto rounded-xl border border-line">
               <table className="w-full min-w-[560px] text-sm">
                 <thead className="bg-panel-2 text-left text-xs text-muted">
@@ -166,7 +176,14 @@ export default async function PortfolioPage() {
                           {b.name}
                         </Link>
                       </td>
-                      <td className="px-3 py-2">{L(STATUS_LABELS[b.status] ?? "")}</td>
+                      <td className="px-3 py-2">
+                        {L(STATUS_LABELS[b.status] ?? "")}
+                        {b.status === "APPROVED" && (
+                          <Link href={`/bots/${b.slug}`} className="ml-2 text-xs text-accent underline">
+                            {t("Publish →", "공개하기 →")}
+                          </Link>
+                        )}
+                      </td>
                       <td className="num px-3 py-2">{L(feeLabel(b.feeTenthsBp))}</td>
                       <td className="num px-3 py-2">v{b.configVersion}</td>
                       <td className="num px-3 py-2">{L(dateTime(b.updatedAt))}</td>
