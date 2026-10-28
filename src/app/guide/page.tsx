@@ -1290,9 +1290,9 @@ export default async function GuidePage() {
               <Link href="/docs" className="underline">
                 Service, fees &amp; security
               </Link>
-              ; for how referral earnings work, see{" "}
-              <Link href="/partners" className="underline">
-                Partners
+              ; for how referral earnings work, connect MetaMask and open{" "}
+              <Link href="/portfolio#partner" className="underline">
+                My page → Partner program
               </Link>
               .
             </>,
@@ -1301,11 +1301,11 @@ export default async function GuidePage() {
               <Link href="/docs" className="underline">
                 서비스·수수료·보안 문서
               </Link>
-              , 추천 수익 구조는{" "}
-              <Link href="/partners" className="underline">
-                파트너 안내
+              , 추천 수익 구조는 MetaMask 연결 후{" "}
+              <Link href="/portfolio#partner" className="underline">
+                마이페이지 → 파트너 프로그램
               </Link>
-              를 확인하세요.
+              에서 확인하세요.
             </>,
           )}
         </p>

@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useI18n } from "@/components/I18nProvider";
-import { buttonClass, Card, Notice } from "@/components/ui";
+import { buttonClass, Notice } from "@/components/ui";
 import { useWallet } from "@/components/wallet/WalletProvider";
 import { apiFetch } from "@/lib/client-api";
 
@@ -13,18 +14,9 @@ export function ActivatePartner() {
   const [accept, setAccept] = useState(false);
   const [code, setCode] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const router = useRouter();
   const existing = w.me?.partner?.referralCode ?? code;
 
-  if (!w.me?.user) {
-    return (
-      <Card className="text-center">
-        <p className="text-sm text-muted">{t("Sign in with your wallet to become a partner.", "파트너로 참여하려면 지갑으로 로그인하세요.")}</p>
-        <button className={buttonClass("primary") + " mt-3"} onClick={w.openConnect}>
-          {t("Connect MetaMask", "MetaMask 연결")}
-        </button>
-      </Card>
-    );
-  }
   if (existing) {
     return (
       <Notice tone="info">
@@ -40,7 +32,7 @@ export function ActivatePartner() {
     );
   }
   return (
-    <Card className="space-y-3">
+    <div className="space-y-3 rounded-xl border border-line bg-panel p-4 sm:p-5" data-testid="activate-partner">
       <label className="flex items-start gap-2 text-sm text-text">
         <input type="checkbox" checked={accept} onChange={(e) => setAccept(e.target.checked)} className="mt-1" />
         {t(
@@ -56,6 +48,7 @@ export function ActivatePartner() {
             const r = await apiFetch<{ referralCode: string }>("/api/partner/activate", { method: "POST", body: { acceptPartnerTerms: true } });
             setCode(r.referralCode);
             await w.refresh();
+            router.refresh();
           } catch (e) {
             setErr(e instanceof Error ? L(e.message) : t("Failed", "실패"));
           }
@@ -64,6 +57,6 @@ export function ActivatePartner() {
         {t("Become a partner", "파트너 시작하기")}
       </button>
       {err && <Notice tone="down">{err}</Notice>}
-    </Card>
+    </div>
   );
 }

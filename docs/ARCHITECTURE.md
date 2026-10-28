@@ -21,7 +21,7 @@ Settlement Worker (상시 실행, Vercel 외부)        Bot Runner (Phase 2, 격
 ## 소스 구조
 | 경로 | 내용 |
 |---|---|
-| `src/app/**/page.tsx` | 화면: `/`, `/bots`, `/bots/[id]`, `/bots/register`, `/trade`, `/portfolio`, `/rankings`, `/ref/[code]`, `/partners`, `/partner`, `/admin`, `/docs` |
+| `src/app/**/page.tsx` | 화면: `/`, `/bots`, `/bots/[id]`, `/bots/register`, `/trade`, `/portfolio`, `/rankings`, `/ref/[code]`, `/partners`(→ `/portfolio#partner`), `/partner`, `/admin`, `/docs` |
 | `src/app/api/**/route.ts` | API (docs/API.md) |
 | `src/lib/config.ts` | 환경변수 → 설정. 누락 시 기능 비활성(사이트는 동작) |
 | `src/lib/db/schema.ts`, `drizzle/*.sql` | 스키마·마이그레이션(RLS, append-only 트리거, 분개 균형 제약, 정책 v1 시드) |

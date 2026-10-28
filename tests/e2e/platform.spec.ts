@@ -76,9 +76,12 @@ test("/admin and /partner are blocked for regular users in UI and API", async ({
   expect((await r.get("/api/admin/bots/pending")).status()).toBe(403);
   expect((await r.post("/api/admin/fees/confirm", { eventIds: ["x"], reason: "x" })).status()).toBe(403);
   expect((await r.get("/api/partner/summary")).status()).toBe(403);
-  // Not linked from the main menu either.
+  // Not linked from the main menu either; the partner program is only on My page.
   await page.goto("/");
-  await expect(page.locator('header a[href="/admin"], header a[href="/partner"]')).toHaveCount(0);
+  await expect(page.locator('header a[href="/admin"], header a[href="/partner"], header a[href="/partners"]')).toHaveCount(0);
+  await page.goto("/partners");
+  await expect(page).toHaveURL(/\/portfolio#partner$/);
+  await expect(page.getByTestId("activate-partner")).toBeVisible();
   await context.close();
 });
 
@@ -163,10 +166,17 @@ test("partner activation, referral link and two-tier relation", async ({ browser
   const { page, context } = await walletPage(browser, E2E_KEYS.partner);
   await page.goto("/");
   await signInViaUi(page);
-  const act = await api(page.request, baseURL!).post("/api/partner/activate", { acceptPartnerTerms: true });
-  const { referralCode } = await act.json();
+  // Join from the Partner program section of My page.
+  await page.goto("/portfolio");
+  const section = page.getByTestId("partner-section");
+  await section.getByTestId("activate-partner").getByRole("checkbox").check();
+  await section.getByRole("button", { name: "파트너 시작하기" }).click();
+  await section.getByRole("link", { name: "파트너 대시보드" }).first().waitFor();
+  const me0 = await (await page.request.get("/api/me")).json();
+  const referralCode: string = me0.partner.referralCode;
   expect(referralCode).toMatch(/^[A-Z2-9]{8}$/);
-  await page.goto("/partner");
+  await section.getByRole("link", { name: "파트너 대시보드" }).first().click();
+  await expect(page).toHaveURL(/\/partner$/);
   await expect(page.getByText(referralCode).first()).toBeVisible();
   await expect(page.getByRole("link", { name: "CSV 내보내기" })).toBeVisible();
 

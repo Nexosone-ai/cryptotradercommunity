@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { Card, SectionTitle, Stat } from "@/components/ui";
+import { Card, LinkButton, SectionTitle, Stat } from "@/components/ui";
 import { getCurrentUser } from "@/lib/auth/current";
 import { getConfig } from "@/lib/config";
 import { getDb } from "@/lib/db/client";
@@ -32,6 +32,11 @@ export default async function PartnerDashboard() {
       <SectionTitle
         title={t("Partner dashboard", "파트너 대시보드")}
         desc={t(`Status: ${active ? "Active" : "Payouts on hold"}`, `상태: ${active ? "활성" : "지급 보류"}`)}
+        action={
+          <LinkButton href="/portfolio#partner" variant="secondary">
+            {t("← My page", "← 마이페이지")}
+          </LinkButton>
+        }
       />
       <PartnerTools code={s.partner.referralCode} url={url} />
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">

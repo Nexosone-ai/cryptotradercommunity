@@ -9,14 +9,13 @@ import { buttonClass, cx } from "./ui";
 import { ConnectModal } from "./wallet/ConnectModal";
 import { ensureWalletChain, useWallet } from "./wallet/WalletProvider";
 
-// Public menu only. /partner and /admin are intentionally not linked here;
-// they are protected by server-side role checks regardless.
+// Public menu only. The partner program is reached from My page (signed-in users);
+// /partner and /admin are protected by server-side role checks regardless.
 const NAV = [
   { href: "/bots", en: "Bots", ko: "봇 마켓" },
   { href: "/trade", en: "Trade", ko: "트레이딩" },
   { href: "/swap", en: "Swap", ko: "스왑" },
   { href: "/rankings", en: "Rankings", ko: "랭킹" },
-  { href: "/partners", en: "Partners", ko: "파트너 안내" },
   { href: "/portfolio", en: "My page", ko: "마이페이지" },
   { href: "/guide", en: "Guide", ko: "가이드" },
 ];
