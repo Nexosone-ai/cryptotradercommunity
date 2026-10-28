@@ -1,9 +1,13 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth/current";
+import { getI18n } from "@/lib/i18n-server";
 import { AdminConsole } from "./AdminConsole";
 
-export const metadata: Metadata = { title: "관리자", robots: { index: false } };
+export async function generateMetadata(): Promise<Metadata> {
+  const { t } = await getI18n();
+  return { title: t("Admin", "관리자"), robots: { index: false } };
+}
 export const dynamic = "force-dynamic";
 
 /**

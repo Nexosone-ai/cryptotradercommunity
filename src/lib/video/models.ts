@@ -6,6 +6,7 @@
  * under-charge once a promotion ends. Update this table if fal changes prices.
  */
 import { E8 } from "../money";
+import { bi } from "../i18n";
 
 export const VIDEO_MODEL = "minimax/h3-max/image-to-video";
 export const FRAME_MODEL = "fal-ai/ffmpeg-api/extract-frame";
@@ -78,7 +79,7 @@ export function quoteVideoJob(resolution: Resolution, clipSeconds: number, marku
 
 export function usdToE8(value: string): bigint {
   const v = value.trim();
-  if (!/^\d+(\.\d{1,2})?$/.test(v)) throw new Error("금액은 소수점 둘째 자리까지의 USD로 입력하세요.");
+  if (!/^\d+(\.\d{1,2})?$/.test(v)) throw new Error(bi("Enter the amount in USD with up to two decimal places.", "금액은 소수점 둘째 자리까지의 USD로 입력하세요."));
   const [w, f = ""] = v.split(".");
   return BigInt(w) * E8 + BigInt((f + "00").slice(0, 2)) * 1_000_000n;
 }

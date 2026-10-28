@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { bi, localize } from "../i18n";
 
 /**
  * Strategy source code attached to a bot (e.g. a TradingView Pine Script).
@@ -14,7 +15,7 @@ export const SOURCE_LANGUAGE_LABELS: Record<(typeof SOURCE_LANGUAGES)[number], s
   PYTHON: "Python",
   JAVASCRIPT: "JavaScript",
   TYPESCRIPT: "TypeScript",
-  OTHER: "기타",
+  OTHER: bi("Other", "기타"),
 };
 export const SOURCE_VISIBILITIES = ["PRIVATE", "PUBLIC"] as const;
 export const MAX_SOURCE_BYTES = 200_000;
@@ -42,12 +43,12 @@ export interface SourceMeta {
 }
 
 const SECRET_PATTERNS: { name: string; re: RegExp }[] = [
-  { name: "개인키(64자리 16진수)", re: /(?<![0-9a-fA-F])(0x)?[0-9a-fA-F]{64}(?![0-9a-fA-F])/ },
-  { name: "니모닉/시드 구문", re: /\b(mnemonic|seed[ _-]?phrase)\b\s*[:=]/i },
-  { name: "OpenAI/Anthropic 계열 키", re: /\bsk-(ant-)?[A-Za-z0-9_-]{20,}/ },
-  { name: "AWS 액세스 키", re: /\bAKIA[0-9A-Z]{16}\b/ },
-  { name: "PEM 개인키", re: /-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----/ },
-  { name: "API 시크릿 할당", re: /\b(api[_-]?secret|secret[_-]?key|private[_-]?key)\b\s*[:=]\s*["'][^"']{12,}["']/i },
+  { name: bi("Private key (64 hex characters)", "개인키(64자리 16진수)"), re: /(?<![0-9a-fA-F])(0x)?[0-9a-fA-F]{64}(?![0-9a-fA-F])/ },
+  { name: bi("Mnemonic / seed phrase", "니모닉/시드 구문"), re: /\b(mnemonic|seed[ _-]?phrase)\b\s*[:=]/i },
+  { name: bi("OpenAI/Anthropic-style API key", "OpenAI/Anthropic 계열 키"), re: /\bsk-(ant-)?[A-Za-z0-9_-]{20,}/ },
+  { name: bi("AWS access key", "AWS 액세스 키"), re: /\bAKIA[0-9A-Z]{16}\b/ },
+  { name: bi("PEM private key", "PEM 개인키"), re: /-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----/ },
+  { name: bi("API secret assignment", "API 시크릿 할당"), re: /\b(api[_-]?secret|secret[_-]?key|private[_-]?key)\b\s*[:=]\s*["'][^"']{12,}["']/i },
 ];
 
 /** Names of secret-looking patterns found in the code (empty = clean). */
@@ -76,9 +77,9 @@ export const sourceInputSchema = z
     visibility: z.enum(SOURCE_VISIBILITIES).default("PRIVATE"),
     code: z
       .string()
-      .min(20, "소스코드가 너무 짧습니다.")
-      .refine((c) => new TextEncoder().encode(c).length <= MAX_SOURCE_BYTES, "소스코드는 200KB 이하여야 합니다.")
-      .refine((c) => !c.includes("\u0000"), "바이너리 파일은 첨부할 수 없습니다."),
+      .min(20, bi("The source code is too short.", "소스코드가 너무 짧습니다."))
+      .refine((c) => new TextEncoder().encode(c).length <= MAX_SOURCE_BYTES, bi("Source code must be 200KB or less.", "소스코드는 200KB 이하여야 합니다."))
+      .refine((c) => !c.includes("\u0000"), bi("Binary files can't be attached.", "바이너리 파일은 첨부할 수 없습니다.")),
   })
   .superRefine((s, ctx) => {
     const secrets = detectSecrets(s.code);
@@ -86,11 +87,14 @@ export const sourceInputSchema = z
       ctx.addIssue({
         code: "custom",
         path: ["code"],
-        message: `소스코드에 비밀값으로 보이는 내용이 있습니다(${secrets.join(", ")}). 키·시드는 제거한 뒤 첨부하세요.`,
+        message: bi(
+          `The source code appears to contain secrets (${secrets.map((n) => localize(n, "en")).join(", ")}). Remove keys and seed phrases before attaching it.`,
+          `소스코드에 비밀값으로 보이는 내용이 있습니다(${secrets.map((n) => localize(n, "ko")).join(", ")}). 키·시드는 제거한 뒤 첨부하세요.`,
+        ),
       });
     }
     if (s.language === "PINESCRIPT" && !/\b(indicator|strategy|library)\s*\(/.test(s.code)) {
-      ctx.addIssue({ code: "custom", path: ["code"], message: "Pine Script에는 indicator(), strategy() 또는 library() 선언이 있어야 합니다." });
+      ctx.addIssue({ code: "custom", path: ["code"], message: bi("Pine Script must declare indicator(), strategy() or library().", "Pine Script에는 indicator(), strategy() 또는 library() 선언이 있어야 합니다.") });
     }
   });
 

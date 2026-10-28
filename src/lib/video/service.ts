@@ -19,6 +19,7 @@ import { E8 } from "../money";
 import type { FalGateway } from "./fal";
 import { creditPackagesUsd, quotePackages } from "./packages";
 import { CLIPS_PER_JOB, DEFAULT_MARKUP_PPM, quoteVideoJob, VIDEO_MODEL, type Resolution } from "./models";
+import { bi } from "../i18n";
 
 // ── Settings ────────────────────────────────────────────────────────────────
 
@@ -39,7 +40,7 @@ export function videoSettings() {
 function companyBank() {
   const c = videoSettings().company;
   if (!c.name || !c.bankName || !c.bankAccount || !c.bankHolder) {
-    throw new ApiError(503, "COMPANY_BANK_NOT_CONFIGURED", "회사 입금 계좌가 설정되지 않았습니다. 관리자에게 문의하세요.");
+    throw new ApiError(503, "COMPANY_BANK_NOT_CONFIGURED", bi("The company bank account for deposits isn't set up. Please contact an admin.", "회사 입금 계좌가 설정되지 않았습니다. 관리자에게 문의하세요."));
   }
   return c;
 }
@@ -50,9 +51,9 @@ function code(prefix: string) {
 }
 
 async function requirePartner(db: DbOrTx, user: SessionUser) {
-  if (!user.roles.includes("PARTNER")) throw forbidden("파트너만 이용할 수 있습니다.");
+  if (!user.roles.includes("PARTNER")) throw forbidden(bi("Only partners can use this.", "파트너만 이용할 수 있습니다."));
   const [p] = await db.select().from(partners).where(eq(partners.userId, user.id)).limit(1);
-  if (!p || p.eligibilityStatus !== "ACTIVE") throw forbidden("활성 파트너만 이용할 수 있습니다.");
+  if (!p || p.eligibilityStatus !== "ACTIVE") throw forbidden(bi("Only active partners can use this.", "활성 파트너만 이용할 수 있습니다."));
   return p;
 }
 
@@ -89,7 +90,7 @@ export async function packageQuotes(fx: FxProvider) {
   try {
     rate = await fx.usdKrw();
   } catch {
-    throw new ApiError(503, "FX_UNAVAILABLE", "환율 정보를 가져오지 못했습니다. 잠시 후 다시 시도하세요.");
+    throw new ApiError(503, "FX_UNAVAILABLE", bi("Couldn't fetch the exchange rate. Please try again shortly.", "환율 정보를 가져오지 못했습니다. 잠시 후 다시 시도하세요."));
   }
   return { fx: rate, packages: quotePackages(rate) };
 }
@@ -100,7 +101,7 @@ export async function packageQuotes(fx: FxProvider) {
  */
 export async function requestTopup(db: Db, fx: FxProvider, user: SessionUser, packageUsd: number) {
   await requirePartner(db, user);
-  if (!creditPackagesUsd().includes(packageUsd)) throw badRequest("INVALID_PACKAGE", "제공하지 않는 크레딧 패키지입니다.");
+  if (!creditPackagesUsd().includes(packageUsd)) throw badRequest("INVALID_PACKAGE", bi("That credit package isn't offered.", "제공하지 않는 크레딧 패키지입니다."));
   const bank = companyBank();
   const { fx: rate, packages } = await packageQuotes(fx);
   const q = packages.find((x) => x.usd === packageUsd)!;
@@ -126,10 +127,10 @@ export async function reviewTopup(db: Db, admin: SessionUser, topupId: string, d
   if (!admin.roles.includes("ADMIN")) throw forbidden();
   return db.transaction(async (tx) => {
     const [t] = await tx.select().from(partnerCreditTopups).where(eq(partnerCreditTopups.id, topupId));
-    if (!t) throw notFound("충전 요청을 찾을 수 없습니다.");
-    if (t.status !== "PENDING") throw conflict("TOPUP_NOT_PENDING", "이미 처리된 충전 요청입니다.");
+    if (!t) throw notFound(bi("Top-up request not found.", "충전 요청을 찾을 수 없습니다."));
+    if (t.status !== "PENDING") throw conflict("TOPUP_NOT_PENDING", bi("This top-up request has already been processed.", "이미 처리된 충전 요청입니다."));
     if (decision === "REJECT") {
-      if (!note?.trim()) throw badRequest("REASON_REQUIRED", "거절 사유를 입력하세요.");
+      if (!note?.trim()) throw badRequest("REASON_REQUIRED", bi("Enter a reason for the rejection.", "거절 사유를 입력하세요."));
       const [r] = await tx
         .update(partnerCreditTopups)
         .set({ status: "REJECTED", reviewedBy: admin.id, reviewedAt: new Date(), note })
@@ -139,13 +140,13 @@ export async function reviewTopup(db: Db, admin: SessionUser, topupId: string, d
       return r;
     }
     const amount = approvedE8 ?? t.requestedE8;
-    if (amount <= 0n) throw badRequest("INVALID_AMOUNT", "확인된 입금액이 올바르지 않습니다.");
+    if (amount <= 0n) throw badRequest("INVALID_AMOUNT", bi("The confirmed deposit amount is invalid.", "확인된 입금액이 올바르지 않습니다."));
     const [r] = await tx
       .update(partnerCreditTopups)
       .set({ status: "APPROVED", approvedE8: amount, reviewedBy: admin.id, reviewedAt: new Date(), note: note ?? null })
       .where(and(eq(partnerCreditTopups.id, t.id), eq(partnerCreditTopups.status, "PENDING")))
       .returning();
-    if (!r) throw conflict("TOPUP_NOT_PENDING", "이미 처리된 충전 요청입니다.");
+    if (!r) throw conflict("TOPUP_NOT_PENDING", bi("This top-up request has already been processed.", "이미 처리된 충전 요청입니다."));
     await journal(tx, [
       { account: "COMPANY_BANK", amountE8: amount, memo: `credit top-up ${t.referenceCode}` },
       { account: "PARTNER_CREDIT", userId: t.partnerUserId, amountE8: -amount, memo: `credit top-up ${t.referenceCode}` },
@@ -187,22 +188,22 @@ function webhookUrl(appUrl: URL) {
 export async function createVideoJob(db: Db, fal: FalGateway, user: SessionUser, input: CreateJobInput, appUrl: URL) {
   await requirePartner(db, user);
   const settings = videoSettings();
-  if (!settings.falConfigured) throw new ApiError(503, "FAL_NOT_CONFIGURED", "영상 생성 서비스가 아직 설정되지 않았습니다.");
-  if (input.rightsConfirmed !== true) throw badRequest("RIGHTS_REQUIRED", "업로드한 영상의 사용 권리 확인이 필요합니다.");
+  if (!settings.falConfigured) throw new ApiError(503, "FAL_NOT_CONFIGURED", bi("The video generation service isn't configured yet.", "영상 생성 서비스가 아직 설정되지 않았습니다."));
+  if (input.rightsConfirmed !== true) throw badRequest("RIGHTS_REQUIRED", bi("You must confirm that you have the rights to use the uploaded video.", "업로드한 영상의 사용 권리 확인이 필요합니다."));
   let src: URL;
   try {
     src = new URL(input.sourceVideoUrl);
   } catch {
-    throw badRequest("INVALID_SOURCE", "영상 주소가 올바르지 않습니다.");
+    throw badRequest("INVALID_SOURCE", bi("The video URL is invalid.", "영상 주소가 올바르지 않습니다."));
   }
   if (src.protocol !== "https:" || !/(^|\.)fal\.(media|ai|run)$/.test(src.hostname)) {
-    throw badRequest("INVALID_SOURCE", "영상은 이 페이지의 업로드 기능으로 올려야 합니다.");
+    throw badRequest("INVALID_SOURCE", bi("Videos must be uploaded with this page's upload feature.", "영상은 이 페이지의 업로드 기능으로 올려야 합니다."));
   }
   let quote;
   try {
     quote = quoteVideoJob(input.resolution, input.clipSeconds, settings.markupPpm);
   } catch (e) {
-    throw badRequest("INVALID_OPTIONS", e instanceof Error ? e.message : "옵션이 올바르지 않습니다.");
+    throw badRequest("INVALID_OPTIONS", e instanceof Error ? e.message : bi("The options are invalid.", "옵션이 올바르지 않습니다."));
   }
 
   // 1. Charge credit atomically.
@@ -210,7 +211,7 @@ export async function createVideoJob(db: Db, fal: FalGateway, user: SessionUser,
     await lockPartner(tx, user.id);
     const bal = await creditBalance(tx, user.id);
     if (bal < quote.priceE8) {
-      throw new ApiError(402, "INSUFFICIENT_CREDIT", "크레딧이 부족합니다. 충전 후 다시 시도하세요.", {
+      throw new ApiError(402, "INSUFFICIENT_CREDIT", bi("Not enough credits. Top up and try again.", "크레딧이 부족합니다. 충전 후 다시 시도하세요."), {
         balanceE8: bal.toString(),
         priceE8: quote.priceE8.toString(),
       });
@@ -247,8 +248,8 @@ export async function createVideoJob(db: Db, fal: FalGateway, user: SessionUser,
     frameUrl = await fal.extractFrame(job.sourceVideoUrl);
     plan = await fal.planVariations(frameUrl, input.brief ?? "", CLIPS_PER_JOB);
   } catch (e) {
-    await failJob(db, job.id, `분석 실패: ${e instanceof Error ? e.message : String(e)}`, job.priceE8);
-    throw new ApiError(502, "ANALYSIS_FAILED", "영상 분석에 실패해 크레딧을 전액 환불했습니다. 다른 영상으로 다시 시도하세요.");
+    await failJob(db, job.id, bi(`Analysis failed: ${e instanceof Error ? e.message : String(e)}`, `분석 실패: ${e instanceof Error ? e.message : String(e)}`), job.priceE8);
+    throw new ApiError(502, "ANALYSIS_FAILED", bi("Video analysis failed, so your credits were refunded in full. Please try a different video.", "영상 분석에 실패해 크레딧을 전액 환불했습니다. 다른 영상으로 다시 시도하세요."));
   }
   await db.update(videoJobs).set({ frameUrl, description: plan.description, updatedAt: new Date() }).where(eq(videoJobs.id, job.id));
 
@@ -261,7 +262,7 @@ export async function createVideoJob(db: Db, fal: FalGateway, user: SessionUser,
       const requestId = await fal.submitVideo({ prompt: o.prompt, imageUrl: frameUrl, seconds: input.clipSeconds, resolution: input.resolution }, hook);
       await db.update(videoOutputs).set({ falRequestId: requestId }).where(eq(videoOutputs.id, o.id));
     } catch (e) {
-      await markOutputFailed(db, o.id, `제출 실패: ${e instanceof Error ? e.message : String(e)}`);
+      await markOutputFailed(db, o.id, bi(`Submission failed: ${e instanceof Error ? e.message : String(e)}`, `제출 실패: ${e instanceof Error ? e.message : String(e)}`));
     }
   }
   await db.update(videoJobs).set({ status: "GENERATING", updatedAt: new Date() }).where(eq(videoJobs.id, job.id));
@@ -358,7 +359,7 @@ export async function refreshJob(db: Db, fal: FalGateway, jobId: string) {
 
 export async function getJob(db: Db, user: SessionUser, jobId: string) {
   const [j] = await db.select().from(videoJobs).where(eq(videoJobs.id, jobId)).limit(1);
-  if (!j || (j.partnerUserId !== user.id && !user.roles.includes("ADMIN"))) throw notFound("작업을 찾을 수 없습니다.");
+  if (!j || (j.partnerUserId !== user.id && !user.roles.includes("ADMIN"))) throw notFound(bi("Job not found.", "작업을 찾을 수 없습니다."));
   const outputs = await db.select().from(videoOutputs).where(eq(videoOutputs.jobId, j.id)).orderBy(videoOutputs.idx);
   return { job: j, outputs };
 }
@@ -384,20 +385,22 @@ export interface CreateInvoiceInput {
 export async function createInvoice(db: Db, user: SessionUser, input: CreateInvoiceInput) {
   await requirePartner(db, user);
   companyBank();
-  if (input.amountE8 <= 0n) throw badRequest("INVALID_AMOUNT", "청구 금액이 올바르지 않습니다.");
-  for (const [k, v, max] of [
-    ["발행자명", input.issuerName, 80],
-    ["고객명", input.customerName, 80],
-    ["내역", input.description, 1000],
+  if (input.amountE8 <= 0n) throw badRequest("INVALID_AMOUNT", bi("The invoice amount is invalid.", "청구 금액이 올바르지 않습니다."));
+  for (const [en, ko, v, max] of [
+    ["Issuer name", "발행자명", input.issuerName, 80],
+    ["Customer name", "고객명", input.customerName, 80],
+    ["Description", "내역", input.description, 1000],
   ] as const) {
-    if (!v.trim() || v.length > max) throw badRequest("INVALID_FIELD", `${k}을(를) 1~${max}자로 입력하세요.`);
+    if (!v.trim() || v.length > max) {
+      throw badRequest("INVALID_FIELD", bi(`${en} must be 1–${max} characters.`, `${ko}을(를) 1~${max}자로 입력하세요.`));
+    }
   }
   if (input.jobId) {
     const [j] = await db.select().from(videoJobs).where(eq(videoJobs.id, input.jobId)).limit(1);
-    if (!j || j.partnerUserId !== user.id) throw notFound("연결할 영상 작업을 찾을 수 없습니다.");
+    if (!j || j.partnerUserId !== user.id) throw notFound(bi("The video job to link was not found.", "연결할 영상 작업을 찾을 수 없습니다."));
     const paid = j.priceE8 - j.refundedE8;
     if (input.amountE8 < paid) {
-      throw badRequest("BELOW_PLATFORM_PRICE", "청구 금액은 이 작업의 플랫폼 이용료보다 낮을 수 없습니다.", { minimumE8: paid.toString() });
+      throw badRequest("BELOW_PLATFORM_PRICE", bi("The invoice amount can't be lower than the platform fee for this job.", "청구 금액은 이 작업의 플랫폼 이용료보다 낮을 수 없습니다."), { minimumE8: paid.toString() });
     }
   }
   const [row] = await db
@@ -423,7 +426,7 @@ export async function cancelInvoice(db: Db, user: SessionUser, invoiceId: string
     .set({ status: "CANCELLED" })
     .where(and(eq(customerInvoices.id, invoiceId), eq(customerInvoices.partnerUserId, user.id), eq(customerInvoices.status, "ISSUED")))
     .returning();
-  if (!row) throw conflict("INVOICE_NOT_CANCELLABLE", "발행 상태의 본인 청구서만 취소할 수 있습니다.");
+  if (!row) throw conflict("INVOICE_NOT_CANCELLABLE", bi("You can only cancel your own invoices that are in issued status.", "발행 상태의 본인 청구서만 취소할 수 있습니다."));
   return row;
 }
 
@@ -436,7 +439,7 @@ export async function markInvoicePaid(db: Db, admin: SessionUser, invoiceId: str
       .set({ status: "PAID", paidConfirmedBy: admin.id, paidAt: new Date() })
       .where(and(eq(customerInvoices.id, invoiceId), eq(customerInvoices.status, "ISSUED")))
       .returning();
-    if (!row) throw conflict("INVOICE_NOT_ISSUED", "발행 상태의 청구서만 입금 확인할 수 있습니다.");
+    if (!row) throw conflict("INVOICE_NOT_ISSUED", bi("Payment can only be confirmed for invoices in issued status.", "발행 상태의 청구서만 입금 확인할 수 있습니다."));
     await journal(tx, [
       { account: "COMPANY_BANK", amountE8: row.amountE8, memo: `customer invoice ${row.referenceCode}` },
       { account: "PARTNER_INVOICE_PAYABLE", userId: row.partnerUserId, amountE8: -row.amountE8, memo: `customer invoice ${row.referenceCode}` },
@@ -468,12 +471,12 @@ export async function listInvoices(db: Db, partnerUserId: string) {
 /** Records a bank transfer from the company to the partner (≤ earnings owed). */
 export async function settlePartner(db: Db, admin: SessionUser, partnerUserId: string, amountE8: bigint, bankReference: string) {
   if (!admin.roles.includes("ADMIN")) throw forbidden();
-  if (amountE8 <= 0n) throw badRequest("INVALID_AMOUNT", "정산 금액이 올바르지 않습니다.");
-  if (!bankReference.trim()) throw badRequest("REFERENCE_REQUIRED", "송금 참조(이체 기록)를 입력하세요.");
+  if (amountE8 <= 0n) throw badRequest("INVALID_AMOUNT", bi("The settlement amount is invalid.", "정산 금액이 올바르지 않습니다."));
+  if (!bankReference.trim()) throw badRequest("REFERENCE_REQUIRED", bi("Enter the transfer reference (bank transfer record).", "송금 참조(이체 기록)를 입력하세요."));
   return db.transaction(async (tx) => {
     await lockPartner(tx, partnerUserId);
     const owed = await invoicePayable(tx, partnerUserId);
-    if (amountE8 > owed) throw conflict("EXCEEDS_PAYABLE", "정산 금액이 미지급 정산금보다 큽니다.");
+    if (amountE8 > owed) throw conflict("EXCEEDS_PAYABLE", bi("The settlement amount exceeds the unpaid balance.", "정산 금액이 미지급 정산금보다 큽니다."));
     const [row] = await tx
       .insert(partnerSettlements)
       .values({ partnerUserId, amountE8, bankReference: bankReference.trim(), createdBy: admin.id })

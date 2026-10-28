@@ -1,4 +1,5 @@
 import Decimal from "decimal.js";
+import { bi } from "./i18n";
 
 /**
  * USD → KRW exchange rate for pricing credit packages.
@@ -52,7 +53,7 @@ export async function fromKoreaExim(fetchFn: Fetch, key: string, now = new Date(
     const rate = new Decimal(usd.deal_bas_r.replace(/,/g, ""));
     if (!plausible(rate)) throw new Error("koreaexim rate out of range");
     const publishedAt = new Date(`${ymd(day).slice(0, 4)}-${ymd(day).slice(4, 6)}-${ymd(day).slice(6)}T11:00:00+09:00`);
-    return { rate: rate.toFixed(), source: "한국수출입은행 매매기준율", asOf: publishedAt };
+    return { rate: rate.toFixed(), source: bi("Export-Import Bank of Korea base rate", "한국수출입은행 매매기준율"), asOf: publishedAt };
   }
   throw new Error("koreaexim: no rate in the last 7 days");
 }

@@ -5,7 +5,9 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { stringToHex } from "viem";
 import type { WalletChain } from "@/lib/chains";
 import type { PublicConfig } from "@/lib/config";
+import { useI18n } from "@/components/I18nProvider";
 import { apiFetch } from "@/lib/client-api";
+import { bi } from "@/lib/i18n";
 
 export interface Eip1193Provider {
   request(args: { method: string; params?: unknown[] | Record<string, unknown> }): Promise<unknown>;
@@ -31,7 +33,9 @@ type Status = "idle" | "connecting" | "signing" | "verifying";
 interface WalletCtx {
   me: Me | null;
   status: Status;
+  /** Already localized for the current reader. */
   error: string | null;
+  /** Already localized for the current reader. */
   notice: string | null;
   chainId: number | null;
   providerName: string | null;
@@ -84,7 +88,7 @@ export async function ensureWalletChain(provider: Eip1193Provider, chain: Wallet
     });
   }
   const after = parseInt((await provider.request({ method: "eth_chainId" })) as string, 16);
-  if (after !== chain.id) throw new Error(`지갑 네트워크를 ${chain.name}로 전환해 주세요.`);
+  if (after !== chain.id) throw new Error(bi(`Please switch your wallet network to ${chain.name}.`, `지갑 네트워크를 ${chain.name}로 전환해 주세요.`));
   return after;
 }
 
@@ -96,13 +100,18 @@ export function metamaskDeepLink() {
 
 function describeError(err: unknown): string {
   const e = err as { code?: number; message?: string };
-  if (e?.code === 4001) return "MetaMask에서 요청을 거절했습니다.";
-  if (e?.code === -32002) return "MetaMask에 처리 대기 중인 요청이 있습니다. MetaMask 창을 열어 확인해 주세요.";
-  return e?.message || "지갑 연결 중 오류가 발생했습니다.";
+  if (e?.code === 4001) return bi("The request was rejected in MetaMask.", "MetaMask에서 요청을 거절했습니다.");
+  if (e?.code === -32002)
+    return bi(
+      "MetaMask already has a pending request. Open the MetaMask window to review it.",
+      "MetaMask에 처리 대기 중인 요청이 있습니다. MetaMask 창을 열어 확인해 주세요.",
+    );
+  return e?.message || bi("Something went wrong while connecting your wallet.", "지갑 연결 중 오류가 발생했습니다.");
 }
 
 export function WalletProvider({ children, initialMe }: { children: ReactNode; initialMe: Me | null }) {
   const router = useRouter();
+  const { L } = useI18n();
   const [me, setMe] = useState<Me | null>(initialMe);
   const [status, setStatus] = useState<Status>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -153,14 +162,21 @@ export function WalletProvider({ children, initialMe }: { children: ReactNode; i
     const onAccounts = (accounts: string[]) => {
       const current = accounts[0]?.toLowerCase();
       if (me?.user && current !== me.user.walletAddress) {
-        setNotice(current ? "지갑 계정이 변경되어 로그아웃했습니다. 새 계정으로 다시 서명해 주세요." : "지갑 연결이 해제되어 로그아웃했습니다.");
+        setNotice(
+          current
+            ? bi(
+                "Your wallet account changed, so you were signed out. Please sign again with the new account.",
+                "지갑 계정이 변경되어 로그아웃했습니다. 새 계정으로 다시 서명해 주세요.",
+              )
+            : bi("Your wallet was disconnected, so you were signed out.", "지갑 연결이 해제되어 로그아웃했습니다."),
+        );
         void signOut();
       }
     };
     const onChain = (hex: string) => setChainId(parseInt(hex, 16));
     const onDisconnect = () => {
       if (me?.user) {
-        setNotice("지갑 연결이 해제되어 로그아웃했습니다.");
+        setNotice(bi("Your wallet was disconnected, so you were signed out.", "지갑 연결이 해제되어 로그아웃했습니다."));
         void signOut();
       }
     };
@@ -188,14 +204,18 @@ export function WalletProvider({ children, initialMe }: { children: ReactNode; i
       setError(null);
       const provider = getProvider();
       if (!provider) {
-        setError(isMobileBrowser() ? "MetaMask 앱의 브라우저에서 열어 주세요." : "MetaMask 확장 프로그램을 찾을 수 없습니다.");
+        setError(
+          isMobileBrowser()
+            ? bi("Please open this page in the MetaMask app's browser.", "MetaMask 앱의 브라우저에서 열어 주세요.")
+            : bi("The MetaMask extension wasn't found.", "MetaMask 확장 프로그램을 찾을 수 없습니다."),
+        );
         return;
       }
       try {
         setStatus("connecting");
         const accounts = (await provider.request({ method: "eth_requestAccounts" })) as string[];
         const address = accounts[0];
-        if (!address) throw new Error("연결된 계정이 없습니다.");
+        if (!address) throw new Error(bi("No account is connected.", "연결된 계정이 없습니다."));
         const required = walletChain;
         const chain = required
           ? await ensureWalletChain(provider, required)
@@ -225,8 +245,9 @@ export function WalletProvider({ children, initialMe }: { children: ReactNode; i
     () => ({
       me,
       status,
-      error,
-      notice,
+      // State holds bi() strings (or plain API/wallet messages); expose them in the reader's language.
+      error: error && L(error),
+      notice: notice && L(notice),
       chainId,
       providerName,
       connectOpen,
@@ -241,7 +262,7 @@ export function WalletProvider({ children, initialMe }: { children: ReactNode; i
       getProvider,
       clearNotice: () => setNotice(null),
     }),
-    [me, status, error, notice, chainId, providerName, connectOpen, signIn, signOut, refresh, getProvider],
+    [me, status, error, notice, L, chainId, providerName, connectOpen, signIn, signOut, refresh, getProvider],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

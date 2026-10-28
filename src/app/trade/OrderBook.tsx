@@ -2,6 +2,7 @@
 
 import { SubscriptionClient, WebSocketTransport } from "@nktkas/hyperliquid";
 import { useEffect, useRef, useState } from "react";
+import { useI18n } from "@/components/I18nProvider";
 
 interface Level {
   px: string;
@@ -17,6 +18,7 @@ type WsState = "connecting" | "live" | "stale" | "error";
  * restores state without merging deltas.
  */
 export function OrderBook({ coin, network, onMid }: { coin: string; network: "testnet" | "mainnet"; onMid?: (mid: number) => void }) {
+  const { t } = useI18n();
   const [bids, setBids] = useState<Level[]>([]);
   const [asks, setAsks] = useState<Level[]>([]);
   const [state, setState] = useState<WsState>("connecting");
@@ -70,21 +72,35 @@ export function OrderBook({ coin, network, onMid }: { coin: string; network: "te
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between border-b border-line px-3 py-2 text-xs">
-        <span className="font-semibold">호가 · {coin}</span>
+        <span className="font-semibold">
+          {t("Order book", "호가")} · {coin}
+        </span>
         <span className={state === "live" ? "text-up" : state === "connecting" ? "text-muted" : "text-warn"}>
-          ● {state === "live" ? "실시간" : state === "connecting" ? "연결 중" : state === "stale" ? "지연됨 (재연결 중)" : "연결 오류"}
+          ●{" "}
+          {state === "live"
+            ? t("Live", "실시간")
+            : state === "connecting"
+              ? t("Connecting", "연결 중")
+              : state === "stale"
+                ? t("Delayed (reconnecting)", "지연됨 (재연결 중)")
+                : t("Connection error", "연결 오류")}
         </span>
       </div>
       <div className="grid grid-cols-2 px-3 py-1 text-[11px] text-faint">
-        <span>가격</span>
-        <span className="text-right">수량</span>
+        <span>{t("Price", "가격")}</span>
+        <span className="text-right">{t("Size", "수량")}</span>
       </div>
       <div className="flex-1 overflow-hidden">
         {[...asks].reverse().map((l) => (
           <Row key={`a${l.px}`} l={l} side="ask" />
         ))}
         <div className="my-1 border-y border-line py-1 text-center text-[11px] text-faint">
-          {bids[0] && asks[0] ? `스프레드 ${(+asks[0].px - +bids[0].px).toFixed(4).replace(/0+$/, "").replace(/\.$/, "")}` : "—"}
+          {bids[0] && asks[0]
+            ? (() => {
+                const spread = (+asks[0].px - +bids[0].px).toFixed(4).replace(/0+$/, "").replace(/\.$/, "");
+                return t(`Spread ${spread}`, `스프레드 ${spread}`);
+              })()
+            : "—"}
         </div>
         {bids.map((l) => (
           <Row key={`b${l.px}`} l={l} side="bid" />

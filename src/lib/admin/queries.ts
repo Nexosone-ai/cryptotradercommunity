@@ -6,6 +6,7 @@ import { adminAuditLogs, bots, feeEvents, ledgerEntries, payouts, riskEvents, us
 import type { HlGateway } from "../hyperliquid/gateway";
 import { reconcile } from "../ledger/service";
 import { parseUsdcE8 } from "../money";
+import { bi } from "../i18n";
 
 export async function feeEventsList(db: Db, status?: string[], limit = 200) {
   return db
@@ -44,7 +45,7 @@ export async function ledgerOverview(db: Db, hl: HlGateway) {
     try {
       hlRewards = await hl.builderRewards(builder);
     } catch {
-      hlError = "Hyperliquid referral(builder) 조회 실패";
+      hlError = bi("Hyperliquid referral (builder) lookup failed", "Hyperliquid referral(builder) 조회 실패");
     }
   }
   const [observed] = await db

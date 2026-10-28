@@ -8,6 +8,7 @@ import { badRequest } from "../http";
 import { registerReferral } from "../referral/service";
 import { createSession, type Role } from "./session";
 import { verifySiweSignature } from "./siwe";
+import { bi } from "../i18n";
 
 export interface SignInInput {
   message: string;
@@ -39,7 +40,7 @@ export async function signIn(db: Db, input: SignInInput) {
   let isNew = false;
   if (!user) {
     if (!input.acceptTerms) {
-      throw badRequest("TERMS_REQUIRED", "첫 로그인 시 이용약관과 위험 고지에 동의해야 합니다.");
+      throw badRequest("TERMS_REQUIRED", bi("On your first sign-in, you must accept the terms of use and the risk disclosure.", "첫 로그인 시 이용약관과 위험 고지에 동의해야 합니다."));
     }
     [user] = await db
       .insert(users)
@@ -53,7 +54,7 @@ export async function signIn(db: Db, input: SignInInput) {
       await grantRole(db, user.id, "TRADER", null);
     }
   }
-  if (user.status !== "ACTIVE") throw badRequest("ACCOUNT_DISABLED", "이용이 제한된 계정입니다.");
+  if (user.status !== "ACTIVE") throw badRequest("ACCOUNT_DISABLED", bi("This account is restricted.", "이용이 제한된 계정입니다."));
 
   let referral: Awaited<ReturnType<typeof registerReferral>> | null = null;
   if (isNew && input.referralCode) {

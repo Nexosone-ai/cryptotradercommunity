@@ -6,10 +6,16 @@ import type { Db } from "../db/client";
 import { authNonces } from "../db/schema";
 import { getConfig } from "../config";
 import { badRequest, unauthorized } from "../http";
+import { bi } from "../i18n";
 
 const NONCE_TTL_MS = 10 * 60 * 1000;
+/**
+ * Fixed, English-only (ASCII, as EIP-4361 expects) statement. The issued
+ * message is stored and compared byte-for-byte on verify, so it must not vary
+ * per reader or carry a bi() separator.
+ */
 export const SIWE_STATEMENT =
-  "CryptoTraderCommunity 로그인. 이 서명은 로그인 전용이며 거래 권한이나 수수료 승인을 부여하지 않습니다.";
+  "Sign in to CryptoTraderCommunity. This signature is for sign-in only and does not grant trading permission or fee approval.";
 
 export interface NonceRequest {
   address: string;
@@ -20,11 +26,11 @@ export interface NonceRequest {
 
 /** Issues a single-use nonce and the exact EIP-4361 message the wallet must sign. */
 export async function issueSiweMessage(db: Db, req: NonceRequest, now = new Date()) {
-  if (!isAddress(req.address, { strict: false })) throw badRequest("INVALID_ADDRESS", "지갑 주소가 올바르지 않습니다.");
-  if (!Number.isInteger(req.chainId) || req.chainId <= 0) throw badRequest("INVALID_CHAIN", "체인 ID가 올바르지 않습니다.");
+  if (!isAddress(req.address, { strict: false })) throw badRequest("INVALID_ADDRESS", bi("Invalid wallet address.", "지갑 주소가 올바르지 않습니다."));
+  if (!Number.isInteger(req.chainId) || req.chainId <= 0) throw badRequest("INVALID_CHAIN", bi("Invalid chain ID.", "체인 ID가 올바르지 않습니다."));
   const chain = getConfig().walletChain;
   if (req.chainId !== chain.id) {
-    throw badRequest("WRONG_CHAIN", `지갑 네트워크를 ${chain.name}(chain ${chain.id})로 전환해 주세요.`);
+    throw badRequest("WRONG_CHAIN", bi(`Please switch your wallet network to ${chain.name} (chain ${chain.id}).`, `지갑 네트워크를 ${chain.name}(chain ${chain.id})로 전환해 주세요.`));
   }
   const nonce = randomBytes(16).toString("hex");
   const expiresAt = new Date(now.getTime() + NONCE_TTL_MS);
@@ -62,9 +68,9 @@ export async function verifySiweSignature(
 ) {
   const parsed = parseSiweMessage(input.message);
   if (!parsed.nonce || !parsed.address || !parsed.domain || !parsed.chainId) {
-    throw unauthorized("서명 메시지 형식이 올바르지 않습니다.");
+    throw unauthorized(bi("The sign-in message format is invalid.", "서명 메시지 형식이 올바르지 않습니다."));
   }
-  if (parsed.domain !== input.expectedDomain) throw unauthorized("서명 도메인이 일치하지 않습니다.");
+  if (parsed.domain !== input.expectedDomain) throw unauthorized(bi("The sign-in domain doesn't match.", "서명 도메인이 일치하지 않습니다."));
 
   // Consume the nonce first (single use, even if verification then fails).
   const [row] = await db
@@ -72,13 +78,13 @@ export async function verifySiweSignature(
     .set({ usedAt: now })
     .where(and(eq(authNonces.nonce, parsed.nonce), isNull(authNonces.usedAt), gt(authNonces.expiresAt, now)))
     .returning();
-  if (!row) throw unauthorized("로그인 요청이 만료되었거나 이미 사용되었습니다. 다시 시도해 주세요.");
-  if (row.message !== input.message) throw unauthorized("서명 메시지가 발급된 내용과 다릅니다.");
+  if (!row) throw unauthorized(bi("The sign-in request has expired or was already used. Please try again.", "로그인 요청이 만료되었거나 이미 사용되었습니다. 다시 시도해 주세요."));
+  if (row.message !== input.message) throw unauthorized(bi("The signed message differs from the one that was issued.", "서명 메시지가 발급된 내용과 다릅니다."));
   if (row.walletAddress !== parsed.address.toLowerCase() || row.chainId !== parsed.chainId) {
-    throw unauthorized("지갑 주소 또는 체인이 일치하지 않습니다.");
+    throw unauthorized(bi("The wallet address or chain doesn't match.", "지갑 주소 또는 체인이 일치하지 않습니다."));
   }
 
   const ok = await verifyMessage({ address: parsed.address, message: input.message, signature: input.signature });
-  if (!ok) throw unauthorized("서명 검증에 실패했습니다.");
+  if (!ok) throw unauthorized(bi("Signature verification failed.", "서명 검증에 실패했습니다."));
   return { address: parsed.address.toLowerCase() as `0x${string}`, chainId: parsed.chainId };
 }

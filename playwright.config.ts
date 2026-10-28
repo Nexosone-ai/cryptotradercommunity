@@ -14,6 +14,12 @@ export default defineConfig({
     // Local runs use the installed Chrome; CI can run `npx playwright install chromium` and unset this.
     channel: process.env.E2E_CHANNEL === "bundled" ? undefined : (process.env.E2E_CHANNEL ?? "chrome"),
     trace: "retain-on-failure",
+    // The site defaults to English; these specs select by the Korean UI text, so they run with Korean chosen.
+    // The English default itself is covered by its own spec (fresh storage state).
+    storageState: {
+      cookies: [{ name: "ctc_lang", value: "ko", domain: "localhost", path: "/", expires: -1, httpOnly: false, secure: false, sameSite: "Lax" }],
+      origins: [],
+    },
   },
   webServer: {
     command: `npx next dev --port ${PORT}`,

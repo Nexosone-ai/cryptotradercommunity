@@ -14,6 +14,7 @@ import { getDb } from "@/lib/db/client";
 import { botSubscriptions } from "@/lib/db/schema";
 import { dateTime, feeLabel, STATUS_LABELS, usd } from "@/lib/format";
 import { botFills, computeMetrics } from "@/lib/performance/metrics";
+import { getI18n } from "@/lib/i18n-server";
 import { and, eq } from "drizzle-orm";
 import { OwnerActions, SubscribePanel } from "./BotActions";
 import { PnlChart } from "./PnlChart";
@@ -29,12 +30,14 @@ function sinceDays(days: number | undefined) {
 export async function generateMetadata({ params }: PageProps<"/bots/[id]">): Promise<Metadata> {
   const { id } = await params;
   const found = await getBotForViewer(await getDb(), id, null).catch(() => null);
-  return { title: found?.bot.name ?? "봇 상세" };
+  const { t } = await getI18n();
+  return { title: found?.bot.name ?? t("Bot details", "봇 상세") };
 }
 
 export default async function BotDetail({ params, searchParams }: PageProps<"/bots/[id]">) {
   const { id } = await params;
   const sp = await searchParams;
+  const { t, L } = await getI18n();
   const db = await getDb();
   const viewer = await getCurrentUser();
   const found = await getBotForViewer(db, id, viewer);
@@ -75,25 +78,30 @@ export default async function BotDetail({ params, searchParams }: PageProps<"/bo
             <h1 className="text-2xl font-bold tracking-tight">{bot.name}</h1>
             <VerificationBadge v={m.verification} />
             <RiskBadge level={bot.riskLevel} />
-            {bot.status !== "LIVE" && <Badge tone="warn">{STATUS_LABELS[bot.status]}</Badge>}
+            {bot.status !== "LIVE" && <Badge tone="warn">{L(STATUS_LABELS[bot.status])}</Badge>}
           </div>
           <p className="mt-2 max-w-3xl text-muted">{bot.summary}</p>
           <div className="mt-3 text-sm">
-            <span className="text-muted">개발자 지갑 (서명 검증됨) </span>
+            <span className="text-muted">{t("Developer wallet (signature-verified) ", "개발자 지갑 (서명 검증됨) ")}</span>
             <AddressLink address={bot.ownerWalletAddress} network={cfg.network} full />
           </div>
         </div>
       </div>
 
       {(isOwner || isAdmin) && bot.status !== "LIVE" && bot.status !== "PAUSED" && (
-        <Notice tone="info">이 봇은 공개 상태가 아닙니다 ({STATUS_LABELS[bot.status]}). 소유자와 관리자만 볼 수 있습니다.</Notice>
+        <Notice tone="info">
+          {t(
+            `This bot is not public (${L(STATUS_LABELS[bot.status])}). Only the owner and admins can see it.`,
+            `이 봇은 공개 상태가 아닙니다 (${L(STATUS_LABELS[bot.status])}). 소유자와 관리자만 볼 수 있습니다.`,
+          )}
+        </Notice>
       )}
 
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">
           <Card>
             <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-              <h2 className="font-semibold">실거래 성과</h2>
+              <h2 className="font-semibold">{t("Live performance", "실거래 성과")}</h2>
               <div className="flex gap-1 text-xs">
                 {Object.keys(PERIODS).map((p) => (
                   <Link
@@ -101,105 +109,134 @@ export default async function BotDetail({ params, searchParams }: PageProps<"/bo
                     href={`/bots/${bot.slug}?period=${p}`}
                     className={`rounded px-2.5 py-1 ${p === periodKey ? "bg-panel-2 text-text" : "text-muted"}`}
                   >
-                    {p === "all" ? "누적" : p}
+                    {p === "all" ? t("All time", "누적") : p}
                   </Link>
                 ))}
               </div>
             </div>
             {!verified && (
               <Notice tone="info">
-                검증 데이터 부족 — 청산 체결 {m.closingTrades}건 (기준 20건), 첫 체결{" "}
-                {m.firstTradeAt ? dateTime(m.firstTradeAt) : "없음"}. 기준 충족 전에는 수익률·순위를 표시하지 않습니다.
+                {t(
+                  <>
+                    Not enough verified data — {m.closingTrades} closing fills (20 required), first fill{" "}
+                    {m.firstTradeAt ? dateTime(m.firstTradeAt) : "none"}. Returns and rankings are hidden until the threshold is met.
+                  </>,
+                  <>
+                    검증 데이터 부족 — 청산 체결 {m.closingTrades}건 (기준 20건), 첫 체결{" "}
+                    {m.firstTradeAt ? dateTime(m.firstTradeAt) : "없음"}. 기준 충족 전에는 수익률·순위를 표시하지 않습니다.
+                  </>,
+                )}
               </Notice>
             )}
             <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <Stat label="순손익 (실현)" value={verified ? usd(m.netPnlUsd) : "—"} tone={verified ? (Number(m.netPnlUsd) >= 0 ? "up" : "down") : undefined} />
-              <Stat label="최대 낙폭 (USDC)" value={verified ? usd(-Number(m.maxDrawdownUsd)) : "—"} />
-              <Stat label="승률" value={verified && m.winRate ? `${m.winRate}%` : "—"} hint={`${m.wins}승 ${m.losses}패`} />
-              <Stat label="손익비" value={verified && m.avgWinLossRatio ? m.avgWinLossRatio : "—"} />
-              <Stat label="체결 수" value={m.fills} />
-              <Stat label="누적 거래대금" value={usd(m.volumeUsd, 0)} />
-              <Stat label="수수료 합계" value={usd(m.feesUsd)} />
-              <Stat label="수익률 (ROI)" value="—" hint="자본 귀속 방식 확정 후 제공 (Phase 2)" />
+              <Stat label={t("Net PnL (realized)", "순손익 (실현)")} value={verified ? usd(m.netPnlUsd) : "—"} tone={verified ? (Number(m.netPnlUsd) >= 0 ? "up" : "down") : undefined} />
+              <Stat label={t("Max drawdown (USDC)", "최대 낙폭 (USDC)")} value={verified ? usd(-Number(m.maxDrawdownUsd)) : "—"} />
+              <Stat
+                label={t("Win rate", "승률")}
+                value={verified && m.winRate ? `${m.winRate}%` : "—"}
+                hint={t(`${m.wins}W ${m.losses}L`, `${m.wins}승 ${m.losses}패`)}
+              />
+              <Stat label={t("Win/loss ratio", "손익비")} value={verified && m.avgWinLossRatio ? m.avgWinLossRatio : "—"} />
+              <Stat label={t("Fills", "체결 수")} value={m.fills} />
+              <Stat label={t("Total volume", "누적 거래대금")} value={usd(m.volumeUsd, 0)} />
+              <Stat label={t("Total fees", "수수료 합계")} value={usd(m.feesUsd)} />
+              <Stat
+                label={t("Return (ROI)", "수익률 (ROI)")}
+                value="—"
+                hint={t("Available once capital attribution is finalized (Phase 2)", "자본 귀속 방식 확정 후 제공 (Phase 2)")}
+              />
             </div>
             <div className="mt-4">
               {verified && curve.length > 1 ? (
                 <PnlChart data={curve} />
               ) : (
                 <div className="flex h-48 items-center justify-center rounded-lg border border-dashed border-line-strong text-sm text-faint">
-                  검증된 실거래 데이터가 쌓이면 누적 순손익 곡선이 표시됩니다.
+                  {t(
+                    "A cumulative net PnL curve appears once verified live data accumulates.",
+                    "검증된 실거래 데이터가 쌓이면 누적 순손익 곡선이 표시됩니다.",
+                  )}
                 </div>
               )}
             </div>
-            <p className="mt-3 text-xs leading-relaxed text-faint">{m.methodology}</p>
+            <p className="mt-3 text-xs leading-relaxed text-faint">{L(m.methodology)}</p>
           </Card>
 
           <Card>
-            <h2 className="font-semibold">전략 설명</h2>
+            <h2 className="font-semibold">{t("Strategy", "전략 설명")}</h2>
             <dl className="mt-3 grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
               <div>
-                <dt className="text-muted">전략</dt>
-                <dd>{STRATEGY_LABELS[config.strategyType]}</dd>
+                <dt className="text-muted">{t("Type", "전략")}</dt>
+                <dd>{L(STRATEGY_LABELS[config.strategyType])}</dd>
               </div>
               <div>
-                <dt className="text-muted">마켓</dt>
+                <dt className="text-muted">{t("Markets", "마켓")}</dt>
                 <dd>{config.markets.join(", ")}</dd>
               </div>
               <div>
-                <dt className="text-muted">방향</dt>
-                <dd>{{ LONG: "롱", SHORT: "숏", BOTH: "롱/숏" }[config.direction]}</dd>
+                <dt className="text-muted">{t("Direction", "방향")}</dt>
+                <dd>{t({ LONG: "Long", SHORT: "Short", BOTH: "Long/short" }, { LONG: "롱", SHORT: "숏", BOTH: "롱/숏" })[config.direction]}</dd>
               </div>
               <div>
-                <dt className="text-muted">레버리지</dt>
+                <dt className="text-muted">{t("Leverage", "레버리지")}</dt>
                 <dd className="num">
                   {config.leverageMin}x – {config.leverageMax}x
                 </dd>
               </div>
               <div>
-                <dt className="text-muted">타임프레임</dt>
+                <dt className="text-muted">{t("Timeframe", "타임프레임")}</dt>
                 <dd>{config.timeframe}</dd>
               </div>
               <div>
-                <dt className="text-muted">실행 방식</dt>
-                <dd>{EXECUTION_LABELS[config.executionMode]}</dd>
+                <dt className="text-muted">{t("Execution", "실행 방식")}</dt>
+                <dd>{L(EXECUTION_LABELS[config.executionMode])}</dd>
               </div>
             </dl>
             <p className="mt-4 whitespace-pre-wrap text-sm leading-relaxed text-text/90">{config.description}</p>
-            <p className="mt-3 text-xs text-faint">공개 범위: 지갑 주소·설정·실거래 성과. 소스코드는 개발자가 공개로 설정한 경우에만 보입니다.</p>
+            <p className="mt-3 text-xs text-faint">
+              {t(
+                "Public: wallet address, settings and live performance. Source code is visible only if the developer made it public.",
+                "공개 범위: 지갑 주소·설정·실거래 성과. 소스코드는 개발자가 공개로 설정한 경우에만 보입니다.",
+              )}
+            </p>
           </Card>
 
           {source ? (
             <Card>
-              <h2 className="mb-3 font-semibold">전략 소스코드</h2>
+              <h2 className="mb-3 font-semibold">{t("Strategy source code", "전략 소스코드")}</h2>
               <BotSourcePanel meta={source.meta} code={source.code} />
             </Card>
           ) : (
             isOwner && (
               <Card>
-                <h2 className="mb-2 font-semibold">전략 소스코드</h2>
-                <p className="text-sm text-muted">첨부된 소스코드가 없습니다. Pine Script 등 전략 코드를 심사용으로 첨부할 수 있습니다(기본 비공개).</p>
+                <h2 className="mb-2 font-semibold">{t("Strategy source code", "전략 소스코드")}</h2>
+                <p className="text-sm text-muted">
+                  {t(
+                    "No source code attached. You can attach strategy code such as Pine Script for review (private by default).",
+                    "첨부된 소스코드가 없습니다. Pine Script 등 전략 코드를 심사용으로 첨부할 수 있습니다(기본 비공개).",
+                  )}
+                </p>
                 <Link href={`/bots/register?edit=${bot.id}&step=source`} className={`mt-3 inline-flex ${buttonClass("secondary", "sm")}`}>
-                  소스코드 첨부
+                  {t("Attach source code", "소스코드 첨부")}
                 </Link>
               </Card>
             )
           )}
 
           <Card>
-            <h2 className="font-semibold">최근 체결 (이 봇의 주문만)</h2>
+            <h2 className="font-semibold">{t("Recent fills (this bot's orders only)", "최근 체결 (이 봇의 주문만)")}</h2>
             {fills.length === 0 ? (
-              <p className="mt-3 text-sm text-muted">아직 이 봇으로 귀속된 체결이 없습니다.</p>
+              <p className="mt-3 text-sm text-muted">{t("No fills attributed to this bot yet.", "아직 이 봇으로 귀속된 체결이 없습니다.")}</p>
             ) : (
               <div className="mt-3 overflow-x-auto">
                 <table className="w-full min-w-[520px] text-sm">
                   <thead className="text-left text-xs text-muted">
                     <tr>
-                      <th className="py-1.5">시간</th>
-                      <th>마켓</th>
-                      <th>방향</th>
-                      <th className="text-right">가격</th>
-                      <th className="text-right">수량</th>
-                      <th className="text-right">실현손익</th>
+                      <th className="py-1.5">{t("Time", "시간")}</th>
+                      <th>{t("Market", "마켓")}</th>
+                      <th>{t("Side", "방향")}</th>
+                      <th className="text-right">{t("Price", "가격")}</th>
+                      <th className="text-right">{t("Size", "수량")}</th>
+                      <th className="text-right">{t("Realized PnL", "실현손익")}</th>
                     </tr>
                   </thead>
                   <tbody className="num divide-y divide-line">
@@ -207,7 +244,7 @@ export default async function BotDetail({ params, searchParams }: PageProps<"/bo
                       <tr key={i}>
                         <td className="py-1.5">{dateTime(f.time)}</td>
                         <td>{f.coin}</td>
-                        <td className={f.side === "B" ? "text-up" : "text-down"}>{f.side === "B" ? "매수" : "매도"}</td>
+                        <td className={f.side === "B" ? "text-up" : "text-down"}>{f.side === "B" ? t("Buy", "매수") : t("Sell", "매도")}</td>
                         <td className="text-right">{f.price}</td>
                         <td className="text-right">{f.size}</td>
                         <td className={`text-right ${Number(f.closedPnl) >= 0 ? "text-up" : "text-down"}`}>{f.closedPnl}</td>
@@ -222,7 +259,7 @@ export default async function BotDetail({ params, searchParams }: PageProps<"/bo
 
         <div className="space-y-6">
           <Card>
-            <h2 className="mb-3 font-semibold">참여</h2>
+            <h2 className="mb-3 font-semibold">{t("Participate", "참여")}</h2>
             {isOwner ? (
               <OwnerActions botId={bot.id} status={bot.status} />
             ) : (
@@ -236,50 +273,57 @@ export default async function BotDetail({ params, searchParams }: PageProps<"/bo
           </Card>
 
           <Card>
-            <h2 className="mb-3 font-semibold">수수료 구성</h2>
+            <h2 className="mb-3 font-semibold">{t("Fee breakdown", "수수료 구성")}</h2>
             <FeeBreakdown feeTenthsBp={bot.feeTenthsBp} builder={cfg.builderAddress} />
           </Card>
 
           <Card>
-            <h2 className="mb-3 font-semibold">위험 정책</h2>
+            <h2 className="mb-3 font-semibold">{t("Risk policy", "위험 정책")}</h2>
             <dl className="num space-y-2 text-sm">
-              <Row k="1회 최대 주문" v={usd(config.risk.maxOrderUsd, 0)} />
-              <Row k="최대 포지션 규모" v={usd(config.risk.maxPositionUsd, 0)} />
-              <Row k="최대 레버리지" v={`${config.risk.maxLeverage}x`} />
-              <Row k="손절" v={`${config.risk.stopLossPct}%`} />
-              <Row k="일일 손실 한도" v={usd(config.risk.dailyLossLimitUsd, 0)} />
-              <Row k="긴급 중단" v="지원" />
+              <Row k={t("Max per order", "1회 최대 주문")} v={usd(config.risk.maxOrderUsd, 0)} />
+              <Row k={t("Max position size", "최대 포지션 규모")} v={usd(config.risk.maxPositionUsd, 0)} />
+              <Row k={t("Max leverage", "최대 레버리지")} v={`${config.risk.maxLeverage}x`} />
+              <Row k={t("Stop loss", "손절")} v={`${config.risk.stopLossPct}%`} />
+              <Row k={t("Daily loss limit", "일일 손실 한도")} v={usd(config.risk.dailyLossLimitUsd, 0)} />
+              <Row k={t("Emergency stop", "긴급 중단")} v={t("Supported", "지원")} />
             </dl>
             {risk.findings.length > 0 && (
               <ul className="mt-3 space-y-1 text-xs text-warn">
                 {risk.findings.map((f) => (
-                  <li key={f.code}>⚠ {f.message}</li>
+                  <li key={f.code}>⚠ {L(f.message)}</li>
                 ))}
               </ul>
             )}
           </Card>
 
           <Card>
-            <h2 className="mb-3 font-semibold">개발자</h2>
-            <p className="text-sm text-muted">{config.developer.bio || "소개가 없습니다."}</p>
+            <h2 className="mb-3 font-semibold">{t("Developer", "개발자")}</h2>
+            <p className="text-sm text-muted">{config.developer.bio || t("No bio.", "소개가 없습니다.")}</p>
             <div className="mt-2 flex flex-wrap gap-3 text-sm">
-              {config.developer.blogUrl && <ExtLink href={config.developer.blogUrl} label="블로그" />}
+              {config.developer.blogUrl && <ExtLink href={config.developer.blogUrl} label={t("Blog", "블로그")} />}
               {config.developer.xUrl && <ExtLink href={config.developer.xUrl} label="X" />}
               {config.developer.telegramUrl && <ExtLink href={config.developer.telegramUrl} label="Telegram" />}
             </div>
             <p className="mt-3 text-xs text-faint">
-              운영 시작 {bot.liveSince ? dateTime(bot.liveSince) : "—"} · 설정 버전 v{bot.configVersion} · 추가 수수료 {feeLabel(bot.feeTenthsBp)}
+              {t(
+                <>
+                  Live since {bot.liveSince ? dateTime(bot.liveSince) : "—"} · config version v{bot.configVersion} · additional fee {feeLabel(bot.feeTenthsBp)}
+                </>,
+                <>
+                  운영 시작 {bot.liveSince ? dateTime(bot.liveSince) : "—"} · 설정 버전 v{bot.configVersion} · 추가 수수료 {feeLabel(bot.feeTenthsBp)}
+                </>,
+              )}
             </p>
           </Card>
 
           {versions.length > 0 && (
             <Card>
-              <h2 className="mb-3 font-semibold">변경 이력 (소유자·관리자만)</h2>
+              <h2 className="mb-3 font-semibold">{t("Change history (owner and admins only)", "변경 이력 (소유자·관리자만)")}</h2>
               <ul className="space-y-2 text-xs">
                 {versions.map((v) => (
                   <li key={v.id} className="flex justify-between gap-2">
                     <span>
-                      v{v.version} · {v.changeNote} · 수수료 {feeLabel(v.feeTenthsBp)}
+                      v{v.version} · {v.changeNote && L(v.changeNote)} · {t("fee", "수수료")} {feeLabel(v.feeTenthsBp)}
                     </span>
                     <span className="num text-faint">{dateTime(v.createdAt)}</span>
                   </li>

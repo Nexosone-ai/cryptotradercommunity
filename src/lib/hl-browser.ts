@@ -4,6 +4,7 @@ import { ExchangeClient, HttpTransport } from "@nktkas/hyperliquid";
 import { createWalletClient, custom } from "viem";
 import { ensureWalletChain, type Eip1193Provider } from "@/components/wallet/WalletProvider";
 import type { WalletChain } from "@/lib/chains";
+import { bi } from "./i18n";
 
 /**
  * Exchange client signed by the user's own MetaMask wallet. Used only for
@@ -24,8 +25,8 @@ export async function userExchange(provider: Eip1193Provider, address: string, n
 
 export function hlErrorMessage(err: unknown): string {
   const e = err as { code?: number; message?: string; cause?: { code?: number } };
-  if (e?.code === 4001 || e?.cause?.code === 4001) return "MetaMask에서 서명을 거절했습니다.";
+  if (e?.code === 4001 || e?.cause?.code === 4001) return bi("The signature was rejected in MetaMask.", "MetaMask에서 서명을 거절했습니다.");
   const msg = e?.message ?? String(err);
-  if (/Must deposit before performing actions/i.test(msg)) return "Hyperliquid 계정에 먼저 USDC를 입금해야 승인할 수 있습니다.";
+  if (/Must deposit before performing actions/i.test(msg)) return bi("Deposit USDC into your Hyperliquid account before approving.", "Hyperliquid 계정에 먼저 USDC를 입금해야 승인할 수 있습니다.");
   return msg;
 }

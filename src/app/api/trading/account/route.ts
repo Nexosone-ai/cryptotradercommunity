@@ -3,6 +3,7 @@ import { readContext } from "@/lib/api";
 import { builderFeeApprovals } from "@/lib/db/schema";
 import { handler, json } from "@/lib/http";
 import { activeAgent, listUserOrders } from "@/lib/trading/service";
+import { bi } from "@/lib/i18n";
 
 /** Account view: Hyperliquid state (source of truth) + platform permissions. */
 export const GET = handler(async () => {
@@ -19,7 +20,7 @@ export const GET = handler(async () => {
   try {
     [state, openOrders] = await Promise.all([hl.clearinghouseState(user.walletAddress), hl.openOrders(user.walletAddress)]);
   } catch {
-    hlError = "Hyperliquid 계정 정보를 불러오지 못했습니다.";
+    hlError = bi("Couldn't load your Hyperliquid account information.", "Hyperliquid 계정 정보를 불러오지 못했습니다.");
   }
   return json({
     network: hl.network,

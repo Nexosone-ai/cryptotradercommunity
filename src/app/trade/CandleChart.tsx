@@ -2,7 +2,9 @@
 
 import { CandlestickSeries, ColorType, createChart, type IChartApi, type ISeriesApi, type UTCTimestamp } from "lightweight-charts";
 import { useEffect, useRef, useState } from "react";
+import { useI18n } from "@/components/I18nProvider";
 import { apiFetch } from "@/lib/client-api";
+import { bi } from "@/lib/i18n";
 
 interface Candle {
   t: number;
@@ -16,6 +18,7 @@ const INTERVALS = ["5m", "15m", "1h", "4h", "1d"] as const;
 
 /** Candles from Hyperliquid (via /api/market/candles), refreshed every 30s. */
 export function CandleChart({ coin }: { coin: string }) {
+  const { t, L, intl } = useI18n();
   const el = useRef<HTMLDivElement>(null);
   const chart = useRef<IChartApi | null>(null);
   const series = useRef<ISeriesApi<"Candlestick"> | null>(null);
@@ -54,7 +57,7 @@ export function CandleChart({ coin }: { coin: string }) {
         setUpdated(d.fetchedAt);
         setErr(null);
       } catch (e) {
-        if (alive) setErr(e instanceof Error ? e.message : "차트 데이터 오류");
+        if (alive) setErr(e instanceof Error ? e.message : bi("Chart data error", "차트 데이터 오류"));
       }
     };
     void load();
@@ -76,7 +79,14 @@ export function CandleChart({ coin }: { coin: string }) {
           ))}
         </div>
         <span className={err ? "text-down" : "text-faint"}>
-          {err ?? (updated ? `Hyperliquid 캔들 · ${new Date(updated).toLocaleTimeString("ko-KR", { hour12: false })} 갱신` : "불러오는 중…")}
+          {err !== null
+            ? L(err)
+            : updated
+              ? (() => {
+                  const time = new Date(updated).toLocaleTimeString(intl, { hour12: false });
+                  return t(`Hyperliquid candles · updated ${time}`, `Hyperliquid 캔들 · ${time} 갱신`);
+                })()
+              : t("Loading…", "불러오는 중…")}
         </span>
       </div>
       <div ref={el} className="min-h-[280px] flex-1" />

@@ -3,6 +3,7 @@ import { mutationContext, readContext } from "@/lib/api";
 import { badRequest, handler, json, readJson } from "@/lib/http";
 import { usdToE8 } from "@/lib/video/models";
 import { createInvoice, listInvoices } from "@/lib/video/service";
+import { bi } from "@/lib/i18n";
 
 const body = z.object({
   issuerName: z.string().max(80),
@@ -25,7 +26,7 @@ export const POST = handler(async (req: Request) => {
   try {
     amountE8 = usdToE8(b.amountUsd);
   } catch (e) {
-    throw badRequest("INVALID_AMOUNT", e instanceof Error ? e.message : "금액이 올바르지 않습니다.");
+    throw badRequest("INVALID_AMOUNT", e instanceof Error ? e.message : bi("The amount is invalid.", "금액이 올바르지 않습니다."));
   }
   return json({ invoice: await createInvoice(db, user, { ...b, amountE8, jobId: b.jobId || undefined }) }, { status: 201 });
 });

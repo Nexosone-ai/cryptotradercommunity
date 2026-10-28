@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { HL_MAX_PERP_BUILDER_FEE_TENTHS_BP } from "../config";
 import { sourceInputSchema, type SourceMeta } from "./source";
+import { bi } from "../i18n";
 
 export const STRATEGY_TYPES = ["TREND_FOLLOWING", "GRID", "MARTINGALE", "TP_TRADING", "ARBITRAGE", "CUSTOM"] as const;
 export const STRATEGY_LABELS: Record<(typeof STRATEGY_TYPES)[number], string> = {
@@ -13,9 +14,9 @@ export const STRATEGY_LABELS: Record<(typeof STRATEGY_TYPES)[number], string> = 
 };
 export const EXECUTION_MODES = ["PLATFORM_TEMPLATE", "VERIFIED_PACKAGE", "WEBHOOK_SIGNAL"] as const;
 export const EXECUTION_LABELS: Record<(typeof EXECUTION_MODES)[number], string> = {
-  PLATFORM_TEMPLATE: "플랫폼 전략 템플릿",
-  VERIFIED_PACKAGE: "검증된 전략 패키지 (심사 필요)",
-  WEBHOOK_SIGNAL: "외부 신호 Webhook (보안 심사 필요)",
+  PLATFORM_TEMPLATE: bi("Platform strategy template", "플랫폼 전략 템플릿"),
+  VERIFIED_PACKAGE: bi("Verified strategy package (review required)", "검증된 전략 패키지 (심사 필요)"),
+  WEBHOOK_SIGNAL: bi("External signal webhook (security review required)", "외부 신호 Webhook (보안 심사 필요)"),
 };
 export const TIMEFRAMES = ["1m", "5m", "15m", "1h", "4h", "1d"] as const;
 export const ORDER_TYPES = ["MARKET", "LIMIT", "STOP_MARKET", "TAKE_PROFIT"] as const;
@@ -31,7 +32,7 @@ export const botConfigSchema = z
       .string()
       .trim()
       .toLowerCase()
-      .regex(/^[a-z0-9](?:[a-z0-9-]{1,46}[a-z0-9])$/, "영문 소문자, 숫자, 하이픈 3~48자"),
+      .regex(/^[a-z0-9](?:[a-z0-9-]{1,46}[a-z0-9])$/, bi("3–48 lowercase letters, numbers or hyphens", "영문 소문자, 숫자, 하이픈 3~48자")),
     logoUrl: optionalUrl,
     summary: z.string().trim().min(10).max(140),
     description: z.string().trim().min(30).max(8000),
@@ -48,7 +49,7 @@ export const botConfigSchema = z
       maxLeverage: z.number().int().min(1).max(50),
       stopLossPct: z.number().positive().max(100),
       dailyLossLimitUsd: z.number().positive().max(1_000_000),
-      emergencyStop: z.literal(true, "긴급 중단(kill switch) 지원은 필수입니다."),
+      emergencyStop: z.literal(true, bi("Emergency stop (kill switch) support is required.", "긴급 중단(kill switch) 지원은 필수입니다.")),
     }),
     executionMode: z.enum(EXECUTION_MODES),
     developer: z.object({
@@ -61,19 +62,19 @@ export const botConfigSchema = z
     /** Optional strategy source code (never executed; see lib/bots/source.ts). */
     source: sourceInputSchema.optional(),
     consents: z.object({
-      terms: z.literal(true, "이용약관 동의가 필요합니다."),
-      risk: z.literal(true, "위험 고지 동의가 필요합니다."),
-      performancePolicy: z.literal(true, "수익률 표시 정책 동의가 필요합니다."),
+      terms: z.literal(true, bi("You must accept the terms of use.", "이용약관 동의가 필요합니다.")),
+      risk: z.literal(true, bi("You must accept the risk disclosure.", "위험 고지 동의가 필요합니다.")),
+      performancePolicy: z.literal(true, bi("You must accept the performance display policy.", "수익률 표시 정책 동의가 필요합니다.")),
     }),
   })
-  .refine((c) => c.leverageMin <= c.leverageMax, { path: ["leverageMax"], message: "최대 레버리지는 최소값 이상이어야 합니다." })
+  .refine((c) => c.leverageMin <= c.leverageMax, { path: ["leverageMax"], message: bi("Max leverage must be at least the minimum leverage.", "최대 레버리지는 최소값 이상이어야 합니다.") })
   .refine((c) => c.risk.maxLeverage <= c.leverageMax, {
     path: ["risk", "maxLeverage"],
-    message: "위험 한도 최대 레버리지는 레버리지 범위 안이어야 합니다.",
+    message: bi("The risk-limit max leverage must be within the leverage range.", "위험 한도 최대 레버리지는 레버리지 범위 안이어야 합니다."),
   })
   .refine((c) => c.risk.maxOrderUsd <= c.risk.maxPositionUsd, {
     path: ["risk", "maxOrderUsd"],
-    message: "1회 최대 주문은 최대 포지션 규모 이하여야 합니다.",
+    message: bi("The max order size must not exceed the max position size.", "1회 최대 주문은 최대 포지션 규모 이하여야 합니다."),
   });
 
 export type BotConfig = z.infer<typeof botConfigSchema>;

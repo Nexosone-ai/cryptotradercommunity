@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { detectSecrets, normalizeSource, pineMeta, sourceInputSchema } from "@/lib/bots/source";
+import { localize } from "@/lib/i18n";
 
 const PINE = readFileSync(path.join(__dirname, "../fixtures/rsi-div-ltf-delta.pine"), "utf8");
 
@@ -25,7 +26,7 @@ describe("strategy source attachment", () => {
 
   it("refuses code containing keys or seeds", () => {
     const key = "0x" + "ab".repeat(32);
-    expect(detectSecrets(`PRIVATE_KEY = "${key}"`)).toContain("개인키(64자리 16진수)");
+    expect(detectSecrets(`PRIVATE_KEY = "${key}"`).map((n) => localize(n, "ko"))).toContain("개인키(64자리 16진수)");
     expect(detectSecrets(`api_secret = "abcdefghijklmnopqrstuvwx"`).length).toBeGreaterThan(0);
     expect(detectSecrets(PINE)).toEqual([]);
     const r = sourceInputSchema.safeParse({ language: "PYTHON", code: `import ccxt\nkey = "${key}"\nprint(key)` });

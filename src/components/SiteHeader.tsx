@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
+import { LanguageSwitch, useI18n } from "./I18nProvider";
 import { shortAddress } from "@/lib/format";
 import { buttonClass, cx } from "./ui";
 import { ConnectModal } from "./wallet/ConnectModal";
@@ -11,17 +12,19 @@ import { ensureWalletChain, useWallet } from "./wallet/WalletProvider";
 // Public menu only. /partner and /admin are intentionally not linked here;
 // they are protected by server-side role checks regardless.
 const NAV = [
-  { href: "/bots", label: "봇 마켓" },
-  { href: "/trade", label: "트레이딩" },
-  { href: "/swap", label: "스왑" },
-  { href: "/rankings", label: "랭킹" },
-  { href: "/partners", label: "파트너 안내" },
-  { href: "/portfolio", label: "마이페이지" },
+  { href: "/bots", en: "Bots", ko: "봇 마켓" },
+  { href: "/trade", en: "Trade", ko: "트레이딩" },
+  { href: "/swap", en: "Swap", ko: "스왑" },
+  { href: "/rankings", en: "Rankings", ko: "랭킹" },
+  { href: "/partners", en: "Partners", ko: "파트너 안내" },
+  { href: "/portfolio", en: "My page", ko: "마이페이지" },
+  { href: "/guide", en: "Guide", ko: "가이드" },
 ];
 
 export function SiteHeader() {
   const pathname = usePathname();
   const w = useWallet();
+  const { t } = useI18n();
   const [menu, setMenu] = useState(false);
   const network = w.me?.config.network ?? "testnet";
   const walletChain = w.me?.config.walletChain;
@@ -42,7 +45,7 @@ export function SiteHeader() {
             "rounded border px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider",
             network === "mainnet" ? "border-down/60 text-down" : "border-warn/60 text-warn",
           )}
-          title={`Hyperliquid ${network} · 지갑 네트워크 ${walletChain?.name ?? ""}`}
+          title={`Hyperliquid ${network} · ${t("wallet network", "지갑 네트워크")} ${walletChain?.name ?? ""}`}
         >
           {network === "mainnet" ? "Mainnet" : "Testnet"}
           {walletChain && <span className="ml-1 hidden font-medium normal-case tracking-normal sm:inline">· {walletChain.name}</span>}
@@ -57,26 +60,27 @@ export function SiteHeader() {
                 pathname.startsWith(n.href) ? "bg-panel-2 text-text" : "text-muted hover:text-text",
               )}
             >
-              {n.label}
+              {t(n.en, n.ko)}
             </Link>
           ))}
         </nav>
         <div className="ml-auto flex items-center gap-2">
+          <LanguageSwitch className="hidden sm:flex" />
           {w.me?.user ? (
             <>
               <Link href="/portfolio" className="num hidden rounded-lg border border-line-strong px-3 py-1.5 text-xs sm:block">
                 {shortAddress(w.me.user.walletAddress)}
               </Link>
               <button className={buttonClass("ghost", "sm")} onClick={() => w.signOut()}>
-                로그아웃
+                {t("Sign out", "로그아웃")}
               </button>
             </>
           ) : (
             <button className={buttonClass("primary", "sm") + " px-4"} onClick={w.openConnect} data-testid="connect-wallet">
-              MetaMask 연결
+              {t("Connect MetaMask", "MetaMask 연결")}
             </button>
           )}
-          <button className="rounded-md p-2 text-muted lg:hidden" onClick={() => setMenu((m) => !m)} aria-label="메뉴" aria-expanded={menu}>
+          <button className="rounded-md p-2 text-muted lg:hidden" onClick={() => setMenu((m) => !m)} aria-label={t("Menu", "메뉴")} aria-expanded={menu}>
             ☰
           </button>
         </div>
@@ -85,14 +89,18 @@ export function SiteHeader() {
         <nav className="border-t border-line px-4 py-2 lg:hidden">
           {NAV.map((n) => (
             <Link key={n.href} href={n.href} onClick={() => setMenu(false)} className="block rounded-md px-2 py-2.5 text-sm text-text">
-              {n.label}
+              {t(n.en, n.ko)}
             </Link>
           ))}
+          <LanguageSwitch className="my-2 w-fit sm:hidden" />
         </nav>
       )}
       {wrongChain && walletChain && (
         <div className="border-t border-warn/40 bg-warn/10 px-4 py-2 text-center text-sm text-warn">
-          지갑이 다른 네트워크(chain {w.chainId})에 연결되어 있습니다. 서명하려면 {walletChain.name}이 필요합니다.{" "}
+          {t(
+            `Your wallet is on another network (chain ${w.chainId}). Signing requires ${walletChain.name}.`,
+            `지갑이 다른 네트워크(chain ${w.chainId})에 연결되어 있습니다. 서명하려면 ${walletChain.name}이 필요합니다.`,
+          )}{" "}
           <button
             className="underline"
             onClick={() => {
@@ -100,7 +108,7 @@ export function SiteHeader() {
               if (provider) void ensureWalletChain(provider, walletChain).catch(() => {});
             }}
           >
-            {walletChain.name}로 전환
+            {t(`Switch to ${walletChain.name}`, `${walletChain.name}로 전환`)}
           </button>
         </div>
       )}
@@ -108,7 +116,7 @@ export function SiteHeader() {
         <div className="border-t border-warn/40 bg-warn/10 px-4 py-2 text-center text-sm text-warn">
           {w.notice}{" "}
           <button className="underline" onClick={w.clearNotice}>
-            닫기
+            {t("Dismiss", "닫기")}
           </button>
         </div>
       )}

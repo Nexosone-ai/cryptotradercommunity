@@ -25,7 +25,7 @@ export async function apiFetch<T = unknown>(
   const data = text ? JSON.parse(text) : null;
   if (!res.ok) {
     const e = data?.error ?? {};
-    throw new ClientApiError(res.status, e.code ?? "HTTP_ERROR", e.message ?? `요청 실패 (${res.status})`, e.details);
+    throw new ClientApiError(res.status, e.code ?? "HTTP_ERROR", e.message ?? `Request failed (${res.status})`, e.details);
   }
   return data as T;
 }

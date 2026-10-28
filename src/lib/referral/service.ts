@@ -4,6 +4,7 @@ import { writeAudit } from "../audit";
 import type { Db, DbOrTx } from "../db/client";
 import { partners, referralRelations, userRoles } from "../db/schema";
 import { conflict } from "../http";
+import { bi } from "../i18n";
 
 // No 0/O/1/I to avoid transcription mistakes.
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
@@ -49,7 +50,7 @@ export async function activatePartner(db: Db, userId: string, actorWallet: strin
     const [raced] = await db.select().from(partners).where(eq(partners.userId, userId)).limit(1);
     if (raced) return raced;
   }
-  throw conflict("CODE_GENERATION_FAILED", "추천 코드 생성에 실패했습니다. 다시 시도해 주세요.");
+  throw conflict("CODE_GENERATION_FAILED", bi("Couldn't generate a referral code. Please try again.", "추천 코드 생성에 실패했습니다. 다시 시도해 주세요."));
 }
 
 export async function findPartnerByCode(db: DbOrTx, code: string) {

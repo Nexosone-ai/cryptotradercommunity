@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import type { Db } from "./db/client";
 import { ApiError } from "./http";
+import { bi } from "./i18n";
 
 /**
  * Fixed-window rate limiter stored in Postgres so it holds across serverless
@@ -22,6 +23,6 @@ export async function rateLimit(db: Db, key: string, limit: number, windowMs: nu
   }[];
   const count = Number(rows[0]?.count ?? 0);
   if (count > limit) {
-    throw new ApiError(429, "RATE_LIMITED", "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.");
+    throw new ApiError(429, "RATE_LIMITED", bi("Too many requests. Please try again shortly.", "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요."));
   }
 }

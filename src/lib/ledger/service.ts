@@ -6,6 +6,7 @@ import { bots, feeEvents, feePolicyVersions, ledgerEntries, payouts, users } fro
 import { splitBuilderFee, validatePolicy, type FeePolicyShares } from "../fees/split";
 import { badRequest, conflict, forbidden, notFound } from "../http";
 import { E8 } from "../money";
+import { bi } from "../i18n";
 
 type LedgerAccount = (typeof ledgerEntries.$inferInsert)["account"];
 
@@ -36,7 +37,7 @@ export async function createPolicyVersion(
   if (!admin.roles.includes("ADMIN")) throw forbidden();
   validatePolicy(input);
   if (input.effectiveFrom.getTime() < Date.now() - 60_000) {
-    throw badRequest("RETROACTIVE_POLICY", "수수료 정책은 과거 시점으로 소급 적용할 수 없습니다.");
+    throw badRequest("RETROACTIVE_POLICY", bi("Fee policies can't be applied retroactively.", "수수료 정책은 과거 시점으로 소급 적용할 수 없습니다."));
   }
   return db.transaction(async (tx) => {
     const [last] = await tx.select().from(feePolicyVersions).orderBy(desc(feePolicyVersions.version)).limit(1);
@@ -73,7 +74,7 @@ export async function createPolicyVersion(
 /** Confirms observed fee events (revenue verified with Hyperliquid) and allocates them. */
 export async function confirmAndAllocate(db: Db, admin: SessionUser, eventIds: string[], reason: string) {
   if (!admin.roles.includes("ADMIN")) throw forbidden();
-  if (!reason.trim()) throw badRequest("REASON_REQUIRED", "확인 근거(대사 결과)를 입력해 주세요.");
+  if (!reason.trim()) throw badRequest("REASON_REQUIRED", bi("Please enter the basis for confirmation (reconciliation result).", "확인 근거(대사 결과)를 입력해 주세요."));
   const results: { id: string; status: string }[] = [];
   for (const id of eventIds) {
     const r = await db.transaction(async (tx) => {
@@ -249,10 +250,10 @@ export async function reconcile(db: DbOrTx): Promise<ReconciliationReport> {
 /** Records that builder rewards were claimed into the platform's Hyperliquid balance. */
 export async function recordBuilderClaim(db: Db, admin: SessionUser, amountE8: bigint, reference: string) {
   if (!admin.roles.includes("ADMIN")) throw forbidden();
-  if (amountE8 <= 0n) throw badRequest("INVALID_AMOUNT", "금액이 올바르지 않습니다.");
+  if (amountE8 <= 0n) throw badRequest("INVALID_AMOUNT", bi("The amount is invalid.", "금액이 올바르지 않습니다."));
   const b = await accountBalances(db);
   if (amountE8 > (b.BUILDER_FEE_RECEIVABLE ?? 0n)) {
-    throw badRequest("CLAIM_EXCEEDS_RECEIVABLE", "청구 금액이 미수 Builder 수익을 초과합니다.");
+    throw badRequest("CLAIM_EXCEEDS_RECEIVABLE", bi("The claim amount exceeds the receivable Builder revenue.", "청구 금액이 미수 Builder 수익을 초과합니다."));
   }
   return db.transaction(async (tx) => {
     const journalId = crypto.randomUUID();
@@ -283,7 +284,7 @@ export async function createPayout(
 ) {
   if (!admin.roles.includes("ADMIN")) throw forbidden();
   const [recipient] = await db.select().from(users).where(eq(users.id, input.recipientUserId));
-  if (!recipient) throw notFound("수령인을 찾을 수 없습니다.");
+  if (!recipient) throw notFound(bi("Recipient not found.", "수령인을 찾을 수 없습니다."));
   return db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${"payout:" + input.recipientUserId}))`);
     const owed = await payableBalance(tx, input.recipientUserId, input.account);
@@ -299,7 +300,7 @@ export async function createPayout(
       );
     const available = owed - BigInt(pending?.total ?? "0");
     const amount = (available / PAYOUT_UNIT_E8) * PAYOUT_UNIT_E8;
-    if (amount < MIN_PAYOUT_E8) throw badRequest("BELOW_MINIMUM", "최소 지급액(1 USDC) 미만입니다.");
+    if (amount < MIN_PAYOUT_E8) throw badRequest("BELOW_MINIMUM", bi("Below the minimum payout (1 USDC).", "최소 지급액(1 USDC) 미만입니다."));
     const [row] = await tx
       .insert(payouts)
       .values({
@@ -333,7 +334,7 @@ export async function approvePayout(db: Db, admin: SessionUser, payoutId: string
       .set({ status: "APPROVED", approvedBy: admin.id, approvedAt: new Date() })
       .where(and(eq(payouts.id, payoutId), eq(payouts.status, "PENDING_APPROVAL")))
       .returning();
-    if (!row) throw conflict("PAYOUT_NOT_PENDING", "승인 대기 상태가 아닙니다.");
+    if (!row) throw conflict("PAYOUT_NOT_PENDING", bi("This payout isn't pending approval.", "승인 대기 상태가 아닙니다."));
     await writeAudit(tx, {
       actorUserId: admin.id,
       actorWallet: admin.walletAddress,
@@ -352,20 +353,20 @@ export async function approvePayout(db: Db, admin: SessionUser, payoutId: string
  */
 export async function markPayoutPaid(db: Db, admin: SessionUser, payoutId: string, txHash: string) {
   if (!admin.roles.includes("ADMIN")) throw forbidden();
-  if (!/^0x[0-9a-fA-F]{64}$/.test(txHash)) throw badRequest("INVALID_TX_HASH", "트랜잭션 해시 형식이 올바르지 않습니다.");
+  if (!/^0x[0-9a-fA-F]{64}$/.test(txHash)) throw badRequest("INVALID_TX_HASH", bi("Invalid transaction hash format.", "트랜잭션 해시 형식이 올바르지 않습니다."));
   return db.transaction(async (tx) => {
     const [target] = await tx.select().from(payouts).where(eq(payouts.id, payoutId));
-    if (!target || target.status !== "APPROVED") throw conflict("PAYOUT_NOT_APPROVED", "승인된 지급만 완료 처리할 수 있습니다.");
+    if (!target || target.status !== "APPROVED") throw conflict("PAYOUT_NOT_APPROVED", bi("Only approved payouts can be marked as paid.", "승인된 지급만 완료 처리할 수 있습니다."));
     const cash = (await accountBalances(tx)).PLATFORM_HL_BALANCE ?? 0n;
     if (cash < target.amountE8) {
-      throw conflict("INSUFFICIENT_CLAIMED_FUNDS", "청구(claim) 기록된 Builder 수익이 지급액보다 적습니다.");
+      throw conflict("INSUFFICIENT_CLAIMED_FUNDS", bi("The claimed Builder revenue on record is less than the payout amount.", "청구(claim) 기록된 Builder 수익이 지급액보다 적습니다."));
     }
     const [row] = await tx
       .update(payouts)
       .set({ status: "PAID", txHash, paidAt: new Date(), attempts: sql`${payouts.attempts} + 1` })
       .where(and(eq(payouts.id, payoutId), eq(payouts.status, "APPROVED")))
       .returning();
-    if (!row) throw conflict("PAYOUT_NOT_APPROVED", "승인된 지급만 완료 처리할 수 있습니다.");
+    if (!row) throw conflict("PAYOUT_NOT_APPROVED", bi("Only approved payouts can be marked as paid.", "승인된 지급만 완료 처리할 수 있습니다."));
     const journalId = crypto.randomUUID();
     await tx.insert(ledgerEntries).values([
       {

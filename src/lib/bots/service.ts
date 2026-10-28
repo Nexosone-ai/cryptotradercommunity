@@ -10,6 +10,7 @@ import { badRequest, conflict, forbidden, notFound } from "../http";
 import { assessBotRisk } from "./risk";
 import { botConfigSchema, type BotConfig, type StoredBotConfig } from "./schema";
 import { normalizeSource, pineMeta, type SourceInput } from "./source";
+import { bi } from "../i18n";
 
 export type BotStatus = (typeof bots.$inferSelect)["status"];
 export type BotRow = typeof bots.$inferSelect;
@@ -35,7 +36,7 @@ export function canTransition(from: BotStatus, to: BotStatus) {
 }
 
 function assertTransition(from: BotStatus, to: BotStatus) {
-  if (!canTransition(from, to)) throw conflict("INVALID_STATUS_TRANSITION", `${from} → ${to} 상태 변경은 허용되지 않습니다.`);
+  if (!canTransition(from, to)) throw conflict("INVALID_STATUS_TRANSITION", bi(`Changing the status from ${from} to ${to} isn't allowed.`, `${from} → ${to} 상태 변경은 허용되지 않습니다.`));
 }
 
 /** Key-order independent JSON (jsonb does not preserve key order). */
@@ -99,8 +100,8 @@ function materialPart(c: StoredBotConfig) {
 
 async function loadOwnedBot(db: Db, user: SessionUser, botId: string) {
   const [bot] = await db.select().from(bots).where(eq(bots.id, botId)).limit(1);
-  if (!bot) throw notFound("봇을 찾을 수 없습니다.");
-  if (bot.ownerUserId !== user.id) throw forbidden("본인이 등록한 봇만 변경할 수 있습니다.");
+  if (!bot) throw notFound(bi("Bot not found.", "봇을 찾을 수 없습니다."));
+  if (bot.ownerUserId !== user.id) throw forbidden(bi("You can only change bots you registered.", "본인이 등록한 봇만 변경할 수 있습니다."));
   return bot;
 }
 
@@ -109,11 +110,11 @@ export async function createBot(db: Db, user: SessionUser, input: unknown) {
   const { stored: config, source } = splitSource(parsed);
   const cfg = getConfig();
   if (config.feeTenthsBp > cfg.platformMaxFeeTenthsBp) {
-    throw badRequest("FEE_ABOVE_PLATFORM_CAP", "추가 Builder Fee가 플랫폼 상한을 초과합니다.");
+    throw badRequest("FEE_ABOVE_PLATFORM_CAP", bi("The additional Builder Fee exceeds the platform cap.", "추가 Builder Fee가 플랫폼 상한을 초과합니다."));
   }
   const risk = assessBotRisk(parsed, cfg.platformMaxFeeTenthsBp);
   const [taken] = await db.select({ id: bots.id }).from(bots).where(eq(bots.slug, config.slug)).limit(1);
-  if (taken) throw conflict("SLUG_TAKEN", "이미 사용 중인 slug입니다.");
+  if (taken) throw conflict("SLUG_TAKEN", bi("That slug is already taken.", "이미 사용 중인 slug입니다."));
 
   return db.transaction(async (tx) => {
     const [bot] = await tx
@@ -153,15 +154,15 @@ export async function createBot(db: Db, user: SessionUser, input: unknown) {
 export async function updateBot(db: Db, user: SessionUser, botId: string, input: unknown) {
   const bot = await loadOwnedBot(db, user, botId);
   if (["SUBMITTED", "UNDER_REVIEW", "SUSPENDED", "ARCHIVED"].includes(bot.status)) {
-    throw conflict("BOT_LOCKED", "심사 중이거나 중단/보관된 봇은 수정할 수 없습니다.");
+    throw conflict("BOT_LOCKED", bi("Bots that are under review, suspended or archived can't be edited.", "심사 중이거나 중단/보관된 봇은 수정할 수 없습니다."));
   }
   const parsedNext = botConfigSchema.parse(input);
   const { stored: next, source } = splitSource(parsedNext);
   const prev = bot.config as StoredBotConfig;
-  if (next.slug !== bot.slug) throw badRequest("SLUG_IMMUTABLE", "slug는 생성 후 변경할 수 없습니다.");
+  if (next.slug !== bot.slug) throw badRequest("SLUG_IMMUTABLE", bi("The slug can't be changed after creation.", "slug는 생성 후 변경할 수 없습니다."));
   const cfg = getConfig();
   if (next.feeTenthsBp > cfg.platformMaxFeeTenthsBp) {
-    throw badRequest("FEE_ABOVE_PLATFORM_CAP", "추가 Builder Fee가 플랫폼 상한을 초과합니다.");
+    throw badRequest("FEE_ABOVE_PLATFORM_CAP", bi("The additional Builder Fee exceeds the platform cap.", "추가 Builder Fee가 플랫폼 상한을 초과합니다."));
   }
   if (hashConfig(next) === hashConfig(prev)) return { bot, changed: false };
 
@@ -172,7 +173,7 @@ export async function updateBot(db: Db, user: SessionUser, botId: string, input:
   if (nextStatus !== bot.status) {
     assertTransition(bot.status, nextStatus);
     const findings = risk.findings.filter((f) => f.severity === "BLOCK");
-    if (findings.length) throw badRequest("RISK_BLOCKED", "위험 검사를 통과하지 못했습니다.", findings);
+    if (findings.length) throw badRequest("RISK_BLOCKED", bi("The bot didn't pass the risk check.", "위험 검사를 통과하지 못했습니다."), findings);
   }
   const version = bot.configVersion + 1;
 
@@ -225,7 +226,7 @@ export async function submitBot(db: Db, user: SessionUser, botId: string) {
   assertTransition(bot.status, "SUBMITTED");
   const risk = assessBotRisk(bot.config as BotConfig, getConfig().platformMaxFeeTenthsBp);
   const blocks = risk.findings.filter((f) => f.severity === "BLOCK");
-  if (blocks.length) throw badRequest("RISK_BLOCKED", "위험 검사를 통과하지 못했습니다.", blocks);
+  if (blocks.length) throw badRequest("RISK_BLOCKED", bi("The bot didn't pass the risk check.", "위험 검사를 통과하지 못했습니다."), blocks);
   const [updated] = await db
     .update(bots)
     .set({ status: "SUBMITTED", riskLevel: risk.level, updatedAt: new Date() })
@@ -238,11 +239,11 @@ export async function submitBot(db: Db, user: SessionUser, botId: string) {
 export async function ownerSetStatus(db: Db, user: SessionUser, botId: string, to: "LIVE" | "PAUSED" | "ARCHIVED") {
   const bot = await loadOwnedBot(db, user, botId);
   if (bot.status === "SUSPENDED" && to !== "ARCHIVED") {
-    throw forbidden("관리자에 의해 중단된 봇은 관리자 해제 후에만 재개할 수 있습니다.");
+    throw forbidden(bi("A bot suspended by an admin can only resume after an admin lifts the suspension.", "관리자에 의해 중단된 봇은 관리자 해제 후에만 재개할 수 있습니다."));
   }
   assertTransition(bot.status, to);
   if (to === "LIVE" && bot.status === "PAUSED" && !(await wasApproved(db, bot.id))) {
-    throw forbidden("승인 이력이 없는 봇은 공개할 수 없습니다.");
+    throw forbidden(bi("A bot that has never been approved can't be published.", "승인 이력이 없는 봇은 공개할 수 없습니다."));
   }
   const [updated] = await db
     .update(bots)
@@ -266,14 +267,14 @@ export type ReviewDecision = "START_REVIEW" | "APPROVE" | "REJECT" | "SUSPEND";
 export async function reviewBot(db: Db, admin: SessionUser, botId: string, decision: ReviewDecision, reason?: string) {
   if (!admin.roles.includes("ADMIN")) throw forbidden();
   const [bot] = await db.select().from(bots).where(eq(bots.id, botId)).limit(1);
-  if (!bot) throw notFound("봇을 찾을 수 없습니다.");
-  if (bot.ownerUserId === admin.id) throw forbidden("본인이 등록한 봇은 심사할 수 없습니다 (이해충돌).");
+  if (!bot) throw notFound(bi("Bot not found.", "봇을 찾을 수 없습니다."));
+  if (bot.ownerUserId === admin.id) throw forbidden(bi("You can't review a bot you registered (conflict of interest).", "본인이 등록한 봇은 심사할 수 없습니다 (이해충돌)."));
   const to: BotStatus = { START_REVIEW: "UNDER_REVIEW", APPROVE: "APPROVED", REJECT: "REJECTED", SUSPEND: "SUSPENDED" }[
     decision
   ] as BotStatus;
   assertTransition(bot.status, to);
   if ((decision === "REJECT" || decision === "SUSPEND") && !reason?.trim()) {
-    throw badRequest("REASON_REQUIRED", "반려/중단 사유를 입력해 주세요.");
+    throw badRequest("REASON_REQUIRED", bi("Please enter a reason for the rejection or suspension.", "반려/중단 사유를 입력해 주세요."));
   }
   return db.transaction(async (tx) => {
     const [updated] = await tx
@@ -281,7 +282,7 @@ export async function reviewBot(db: Db, admin: SessionUser, botId: string, decis
       .set({ status: to, updatedAt: new Date() })
       .where(and(eq(bots.id, bot.id), eq(bots.status, bot.status)))
       .returning();
-    if (!updated) throw conflict("CONCURRENT_UPDATE", "다른 변경과 충돌했습니다. 새로고침 후 다시 시도해 주세요.");
+    if (!updated) throw conflict("CONCURRENT_UPDATE", bi("This conflicted with another change. Refresh and try again.", "다른 변경과 충돌했습니다. 새로고침 후 다시 시도해 주세요."));
     await tx.insert(botReviewLogs).values({
       botId: bot.id,
       reviewerUserId: admin.id,
@@ -311,12 +312,12 @@ export async function subscribe(
   botId: string,
   input: { acceptedFeeTenthsBp: number; acceptRisk: boolean },
 ) {
-  if (input.acceptRisk !== true) throw badRequest("RISK_CONSENT_REQUIRED", "위험 고지에 동의해야 합니다.");
+  if (input.acceptRisk !== true) throw badRequest("RISK_CONSENT_REQUIRED", bi("You must accept the risk disclosure.", "위험 고지에 동의해야 합니다."));
   const [bot] = await db.select().from(bots).where(eq(bots.id, botId)).limit(1);
-  if (!bot || bot.status !== "LIVE") throw conflict("BOT_NOT_LIVE", "현재 구독할 수 없는 봇입니다.");
-  if (bot.ownerUserId === user.id) throw badRequest("SELF_SUBSCRIBE", "본인 봇은 구독할 수 없습니다.");
+  if (!bot || bot.status !== "LIVE") throw conflict("BOT_NOT_LIVE", bi("This bot isn't open for subscription right now.", "현재 구독할 수 없는 봇입니다."));
+  if (bot.ownerUserId === user.id) throw badRequest("SELF_SUBSCRIBE", bi("You can't subscribe to your own bot.", "본인 봇은 구독할 수 없습니다."));
   if (input.acceptedFeeTenthsBp !== bot.feeTenthsBp) {
-    throw conflict("FEE_CHANGED", "봇 수수료율이 변경되었습니다. 최신 수수료를 확인 후 다시 동의해 주세요.");
+    throw conflict("FEE_CHANGED", bi("The bot's fee rate has changed. Please review the latest fee and consent again.", "봇 수수료율이 변경되었습니다. 최신 수수료를 확인 후 다시 동의해 주세요."));
   }
   const network = getConfig().network;
   const now = new Date();
@@ -353,7 +354,7 @@ export async function unsubscribe(db: Db, user: SessionUser, botId: string) {
     .set({ status: "STOPPED", stoppedAt: new Date() })
     .where(and(eq(botSubscriptions.botId, botId), eq(botSubscriptions.userId, user.id)))
     .returning();
-  if (!row) throw notFound("구독 정보가 없습니다.");
+  if (!row) throw notFound(bi("Subscription not found.", "구독 정보가 없습니다."));
   return row;
 }
 

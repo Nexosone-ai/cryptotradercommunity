@@ -4,6 +4,7 @@ import { getCurrentUser } from "@/lib/auth/current";
 import { getBotForViewer } from "@/lib/bots/service";
 import { estimateFees, HL_BASE_PERP_FEE } from "@/lib/fees/rates";
 import { handler, json, notFound } from "@/lib/http";
+import { bi } from "@/lib/i18n";
 
 const query = z.object({ notional: z.coerce.number().positive().max(1e9), botId: z.string().optional() });
 
@@ -14,7 +15,7 @@ export const GET = handler(async (req: Request) => {
   let fee = cfg.manualOrderFeeTenthsBp;
   if (q.botId) {
     const found = await getBotForViewer(db, q.botId, await getCurrentUser());
-    if (!found) throw notFound("봇을 찾을 수 없습니다.");
+    if (!found) throw notFound(bi("Bot not found.", "봇을 찾을 수 없습니다."));
     fee = found.bot.feeTenthsBp;
   }
   return json({ estimate: estimateFees(q.notional, fee), baseFeeSource: HL_BASE_PERP_FEE.source, builder: cfg.builderAddress });

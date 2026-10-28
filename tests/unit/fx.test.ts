@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createFxProvider, fromKoreaExim, krwWithVat } from "@/lib/fx";
+import { localize } from "@/lib/i18n";
 
 type Resp = { ok: boolean; json(): Promise<unknown> };
 const ok = (body: unknown): Resp => ({ ok: true, json: async () => body });
@@ -12,7 +13,8 @@ describe("USD/KRW rate", () => {
       return calls.length < 3 ? ok([]) : ok([{ result: 1, cur_unit: "JPY(100)", deal_bas_r: "905.1" }, { result: 1, cur_unit: "USD", deal_bas_r: "1,325.5" }]);
     };
     const q = await fromKoreaExim(fetchFn, "key", new Date("2026-10-26T03:00:00Z"));
-    expect(q).toMatchObject({ rate: "1325.5", source: "한국수출입은행 매매기준율" });
+    expect(q).toMatchObject({ rate: "1325.5" });
+    expect(localize(q.source, "ko")).toBe("한국수출입은행 매매기준율");
     expect(calls).toHaveLength(3);
     expect(calls[0]).toContain("searchdate=20261026");
     expect(calls[2]).toContain("searchdate=20261024");

@@ -3,6 +3,7 @@ import type { Db } from "../db/client";
 import { bots, feeEvents, feePolicyVersions, ledgerEntries, partners, payouts, users } from "../db/schema";
 import { payableBalance } from "../ledger/service";
 import { referralCounts } from "../referral/service";
+import { bi } from "../i18n";
 
 export function maskAddress(addr: string) {
   return `${addr.slice(0, 6)}…${addr.slice(-4)}`;
@@ -88,7 +89,7 @@ export async function partnerEarnings(db: Db, userId: string, f: EarningsFilter 
     earnedE8: -r.amountE8,
     builderFeeE8: r.feeE8,
     occurredAt: r.occurredAt,
-    bot: r.botName ?? "수동 주문",
+    bot: r.botName ?? bi("Manual order", "수동 주문"),
     trader: maskAddress(r.trader),
     policyVersion: r.policyVersion,
   }));

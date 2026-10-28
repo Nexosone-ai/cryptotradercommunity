@@ -338,3 +338,35 @@ test("strategy source: Pine Script pasted in the wizard is analysed, stored priv
   await anon.close();
   await ctx.close();
 });
+
+test("beginner guide is public and linked from the header", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.locator('header a[href="/guide"]').first()).toBeAttached();
+  await expect(page.locator('footer a[href="/guide"]')).toBeAttached();
+  await page.goto("/guide");
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("이용 가이드");
+  for (const h of ["1. 가입하기", "2. 봇 등록하기", "3. 수수료(커미션) 설정 자세히", "4. 심사", "5. 수익 확인과 지급"]) {
+    await expect(page.getByRole("heading", { level: 2, name: new RegExp(h.replace(/[()]/g, "\\$&")) })).toBeVisible();
+  }
+  await expect(page.getByText("체결 금액 10,000 USDC 기준", { exact: false })).toBeVisible();
+});
+
+test("English is the default language; the header switch changes the site and API messages to Korean", async ({ browser }) => {
+  const ctx = await browser.newContext({ storageState: { cookies: [], origins: [] } });
+  const page = await ctx.newPage();
+  await page.goto("/");
+  await expect(page.locator("html")).toHaveAttribute("lang", "en");
+  await expect(page.getByTestId("connect-wallet")).toHaveText("Connect MetaMask");
+  const missing = await page.request.get("/api/bots/does-not-exist");
+  expect(missing.status()).toBe(404);
+  expect((await missing.json()).error.message).not.toMatch(/[가-힣]/);
+
+  await page.getByRole("button", { name: "한국어" }).first().click();
+  await expect(page.locator("html")).toHaveAttribute("lang", "ko");
+  await expect(page.getByTestId("connect-wallet")).toHaveText("MetaMask 연결");
+  expect((await (await page.request.get("/api/bots/does-not-exist")).json()).error.message).toMatch(/[가-힣]/);
+
+  await page.getByRole("button", { name: "EN" }).first().click();
+  await expect(page.locator("html")).toHaveAttribute("lang", "en");
+  await ctx.close();
+});

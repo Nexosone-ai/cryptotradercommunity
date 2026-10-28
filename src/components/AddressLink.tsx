@@ -3,9 +3,11 @@
 import { useState } from "react";
 import { checksum, shortAddress } from "@/lib/format";
 import { explorerAddressUrl } from "@/lib/hyperliquid/format";
+import { useI18n } from "./I18nProvider";
 
 /** Checksum address with copy button and Hyperliquid explorer link. */
 export function AddressLink({ address, network, full = false }: { address: string; network: "testnet" | "mainnet"; full?: boolean }) {
+  const { t } = useI18n();
   const [copied, setCopied] = useState(false);
   const cs = checksum(address);
   return (
@@ -28,7 +30,7 @@ export function AddressLink({ address, network, full = false }: { address: strin
           setTimeout(() => setCopied(false), 1500);
         }}
       >
-        {copied ? "복사됨" : "복사"}
+        {copied ? t("Copied", "복사됨") : t("Copy", "복사")}
       </button>
     </span>
   );

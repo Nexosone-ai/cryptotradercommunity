@@ -18,6 +18,7 @@ import { ApiError, badRequest, conflict, forbidden, notFound } from "../http";
 import { formatPerpPrice, formatPerpSize, newCloid } from "../hyperliquid/format";
 import type { HlGateway } from "../hyperliquid/gateway";
 import { decryptAgentKey, generateAgent } from "./agent-keys";
+import { bi } from "../i18n";
 
 const AGENT_VALIDITY_DAYS = 30;
 const MARKET_SLIPPAGE = new Decimal("0.05");
@@ -50,11 +51,11 @@ export async function ensureTradingAccount(
 export async function prepareAgent(db: Db, user: SessionUser) {
   const cfg = getConfig();
   if (!cfg.agentKeyConfigured) {
-    throw new ApiError(503, "AGENT_KEYS_DISABLED", "서버에 에이전트 키 암호화 설정이 없어 거래 권한 위임을 사용할 수 없습니다.");
+    throw new ApiError(503, "AGENT_KEYS_DISABLED", bi("Trading permission can't be delegated because agent key encryption isn't configured on the server.", "서버에 에이전트 키 암호화 설정이 없어 거래 권한 위임을 사용할 수 없습니다."));
   }
   // View-only mainnet: no trading permission is handed out until mainnet trading is enabled.
   if (cfg.isMainnet && !cfg.mainnetTradingEnabled) {
-    throw new ApiError(403, "MAINNET_DISABLED", "메인넷 거래가 활성화되지 않아 거래 권한을 위임할 수 없습니다.");
+    throw new ApiError(403, "MAINNET_DISABLED", bi("Mainnet trading isn't enabled, so trading permission can't be delegated.", "메인넷 거래가 활성화되지 않아 거래 권한을 위임할 수 없습니다."));
   }
   // Superseded pending agents are discarded; Hyperliquid advises never reusing agent addresses.
   await db
@@ -96,10 +97,10 @@ export async function verifyAgent(db: Db, hl: HlGateway, user: SessionUser) {
     )
     .orderBy(desc(agentAuthorizations.createdAt))
     .limit(1);
-  if (!pending) throw notFound("승인 대기 중인 에이전트가 없습니다.");
+  if (!pending) throw notFound(bi("No agent wallet is awaiting approval.", "승인 대기 중인 에이전트가 없습니다."));
   const agents = await hl.extraAgents(user.walletAddress);
   const found = agents.find((a) => a.address === pending.agentAddress);
-  if (!found) throw conflict("AGENT_NOT_APPROVED", "Hyperliquid에서 에이전트 승인을 확인하지 못했습니다.");
+  if (!found) throw conflict("AGENT_NOT_APPROVED", bi("Couldn't confirm the agent wallet approval on Hyperliquid.", "Hyperliquid에서 에이전트 승인을 확인하지 못했습니다."));
   await db
     .update(agentAuthorizations)
     .set({ status: "REVOKED", revokedAt: new Date() })
@@ -141,7 +142,7 @@ export async function activeAgent(db: Db, userId: string, network: AppConfig["ne
 /** Parameters the user's main wallet must sign. The server picks builder + rate. */
 export function builderApprovalChallenge(requiredTenthsBp: number) {
   const cfg = getConfig();
-  if (!cfg.builderAddress) throw new ApiError(503, "BUILDER_NOT_CONFIGURED", "Builder 주소가 설정되지 않았습니다.");
+  if (!cfg.builderAddress) throw new ApiError(503, "BUILDER_NOT_CONFIGURED", bi("The Builder address isn't configured.", "Builder 주소가 설정되지 않았습니다."));
   const rate = Math.min(Math.max(requiredTenthsBp, 0), cfg.platformMaxFeeTenthsBp, HL_MAX_PERP_BUILDER_FEE_TENTHS_BP);
   return {
     builder: cfg.builderAddress,
@@ -198,10 +199,10 @@ async function reject(db: Db, user: SessionUser, botId: string | undefined, code
  */
 export async function placeOrder(db: Db, hl: HlGateway, user: SessionUser, req: OrderRequest, ctx: OrderContext) {
   const cfg = getConfig();
-  if (hl.network !== cfg.network) throw forbidden("네트워크 설정이 일치하지 않습니다.");
+  if (hl.network !== cfg.network) throw forbidden(bi("Network settings don't match.", "네트워크 설정이 일치하지 않습니다."));
   if (cfg.isMainnet) {
-    if (!cfg.mainnetTradingEnabled) await reject(db, user, ctx.botId, "MAINNET_DISABLED", "메인넷 거래가 활성화되지 않았습니다.");
-    if (req.confirmMainnet !== true) await reject(db, user, ctx.botId, "MAINNET_CONFIRM_REQUIRED", "메인넷 실거래 재확인이 필요합니다.");
+    if (!cfg.mainnetTradingEnabled) await reject(db, user, ctx.botId, "MAINNET_DISABLED", bi("Mainnet trading isn't enabled.", "메인넷 거래가 활성화되지 않았습니다."));
+    if (req.confirmMainnet !== true) await reject(db, user, ctx.botId, "MAINNET_CONFIRM_REQUIRED", bi("Please reconfirm that you want to place a real mainnet trade.", "메인넷 실거래 재확인이 필요합니다."));
   }
 
   // 1. Fee and limits come from the bot subscription (bot orders) or platform config (manual).
@@ -209,61 +210,61 @@ export async function placeOrder(db: Db, hl: HlGateway, user: SessionUser, req: 
   let maxOrderUsd = new Decimal(cfg.maxManualOrderUsd);
   let subscriptionId: string | null = null;
   if (ctx.source === "BOT") {
-    if (!ctx.botId) throw badRequest("BOT_REQUIRED", "봇 주문에는 botId가 필요합니다.");
+    if (!ctx.botId) throw badRequest("BOT_REQUIRED", bi("Bot orders require a botId.", "봇 주문에는 botId가 필요합니다."));
     const [bot] = await db.select().from(bots).where(eq(bots.id, ctx.botId)).limit(1);
-    if (!bot || bot.status !== "LIVE") await reject(db, user, ctx.botId, "BOT_NOT_LIVE", "봇이 실행 상태가 아닙니다.");
+    if (!bot || bot.status !== "LIVE") await reject(db, user, ctx.botId, "BOT_NOT_LIVE", bi("The bot isn't running.", "봇이 실행 상태가 아닙니다."));
     const [sub] = await db
       .select()
       .from(botSubscriptions)
       .where(and(eq(botSubscriptions.botId, ctx.botId), eq(botSubscriptions.userId, user.id), eq(botSubscriptions.network, hl.network)))
       .limit(1);
     if (!sub || sub.status !== "ACTIVE") {
-      await reject(db, user, ctx.botId, "SUBSCRIPTION_INACTIVE", "봇 구독이 중지되었거나 재동의가 필요합니다.");
+      await reject(db, user, ctx.botId, "SUBSCRIPTION_INACTIVE", bi("The bot subscription is stopped or needs re-consent.", "봇 구독이 중지되었거나 재동의가 필요합니다."));
     }
     const botConfig = bot!.config as BotConfig;
     if (!botConfig.markets.includes(`${req.coin}-PERP`)) {
-      await reject(db, user, ctx.botId, "MARKET_NOT_ALLOWED", "봇에 허용되지 않은 마켓입니다.");
+      await reject(db, user, ctx.botId, "MARKET_NOT_ALLOWED", bi("This market isn't allowed for the bot.", "봇에 허용되지 않은 마켓입니다."));
     }
     feeTenthsBp = sub!.acceptedFeeTenthsBp; // never the bot's current fee
     maxOrderUsd = new Decimal(botConfig.risk.maxOrderUsd);
     subscriptionId = sub!.id;
   }
   if (feeTenthsBp > cfg.platformMaxFeeTenthsBp || feeTenthsBp > HL_MAX_PERP_BUILDER_FEE_TENTHS_BP) {
-    await reject(db, user, ctx.botId, "FEE_ABOVE_CAP", "수수료율이 허용 상한을 초과합니다.");
+    await reject(db, user, ctx.botId, "FEE_ABOVE_CAP", bi("The fee rate exceeds the allowed cap.", "수수료율이 허용 상한을 초과합니다."));
   }
 
   // 2. Agent authorization (trading permission) must be active and unexpired.
   const agent = await activeAgent(db, user.id, hl.network);
-  if (!agent) await reject(db, user, ctx.botId, "AGENT_NOT_AUTHORIZED", "거래 권한(에이전트) 승인이 필요합니다.");
+  if (!agent) await reject(db, user, ctx.botId, "AGENT_NOT_AUTHORIZED", bi("You need to approve trading permission (agent wallet).", "거래 권한(에이전트) 승인이 필요합니다."));
 
   // 3. Builder fee approval, checked live on Hyperliquid.
   if (feeTenthsBp > 0) {
-    if (!cfg.builderAddress) await reject(db, user, ctx.botId, "BUILDER_NOT_CONFIGURED", "Builder 주소가 설정되지 않았습니다.", 503);
+    if (!cfg.builderAddress) await reject(db, user, ctx.botId, "BUILDER_NOT_CONFIGURED", bi("The Builder address isn't configured.", "Builder 주소가 설정되지 않았습니다."), 503);
     let approved: number;
     try {
       approved = await hl.maxBuilderFee(user.walletAddress, cfg.builderAddress!);
     } catch {
-      return reject(db, user, ctx.botId, "HL_UNAVAILABLE", "Hyperliquid에서 수수료 승인을 확인할 수 없어 주문을 중단했습니다.", 503);
+      return reject(db, user, ctx.botId, "HL_UNAVAILABLE", bi("The order was stopped because the fee approval couldn't be confirmed on Hyperliquid.", "Hyperliquid에서 수수료 승인을 확인할 수 없어 주문을 중단했습니다."), 503);
     }
     if (approved < feeTenthsBp) {
-      await reject(db, user, ctx.botId, "BUILDER_FEE_NOT_APPROVED", `Builder Fee 승인(${approved}) 이 필요한 수수료(${feeTenthsBp})보다 낮습니다.`);
+      await reject(db, user, ctx.botId, "BUILDER_FEE_NOT_APPROVED", bi(`Your Builder Fee approval (${approved}) is lower than the required fee (${feeTenthsBp}).`, `Builder Fee 승인(${approved}) 이 필요한 수수료(${feeTenthsBp})보다 낮습니다.`));
     }
   }
 
   // 4. Market, price, size and notional limits.
   const assets = await hl.perpAssets();
   const asset = assets.find((a) => a.name === req.coin);
-  if (!asset) throw badRequest("UNKNOWN_MARKET", "지원하지 않는 마켓입니다.");
+  if (!asset) throw badRequest("UNKNOWN_MARKET", bi("Unsupported market.", "지원하지 않는 마켓입니다."));
   let size: Decimal;
   try {
     size = new Decimal(req.size);
   } catch {
-    throw badRequest("INVALID_SIZE", "주문 수량이 올바르지 않습니다.");
+    throw badRequest("INVALID_SIZE", bi("The order size is invalid.", "주문 수량이 올바르지 않습니다."));
   }
-  if (!size.isFinite() || size.lte(0)) throw badRequest("INVALID_SIZE", "주문 수량이 올바르지 않습니다.");
+  if (!size.isFinite() || size.lte(0)) throw badRequest("INVALID_SIZE", bi("The order size is invalid.", "주문 수량이 올바르지 않습니다."));
   const mids = await hl.mids();
   const mid = mids[req.coin] ? new Decimal(mids[req.coin]) : null;
-  if (!mid) throw new ApiError(503, "NO_PRICE", "현재가를 확인할 수 없습니다.");
+  if (!mid) throw new ApiError(503, "NO_PRICE", bi("Couldn't get the current price.", "현재가를 확인할 수 없습니다."));
 
   let price: Decimal;
   let tif: "Gtc" | "Ioc" | "Alo";
@@ -271,12 +272,12 @@ export async function placeOrder(db: Db, hl: HlGateway, user: SessionUser, req: 
     price = req.isBuy ? mid.mul(MARKET_SLIPPAGE.plus(1)) : mid.mul(new Decimal(1).minus(MARKET_SLIPPAGE));
     tif = "Ioc";
   } else {
-    if (!req.price) throw badRequest("PRICE_REQUIRED", "지정가 주문에는 가격이 필요합니다.");
+    if (!req.price) throw badRequest("PRICE_REQUIRED", bi("Limit orders require a price.", "지정가 주문에는 가격이 필요합니다."));
     price = new Decimal(req.price);
-    if (!price.isFinite() || price.lte(0)) throw badRequest("INVALID_PRICE", "가격이 올바르지 않습니다.");
+    if (!price.isFinite() || price.lte(0)) throw badRequest("INVALID_PRICE", bi("The price is invalid.", "가격이 올바르지 않습니다."));
     // Fat-finger guard: limit price within ±20% of mid.
     if (price.minus(mid).abs().div(mid).gt(0.2)) {
-      await reject(db, user, ctx.botId, "PRICE_OUT_OF_BAND", "지정가가 현재가 대비 ±20% 범위를 벗어났습니다.", 400);
+      await reject(db, user, ctx.botId, "PRICE_OUT_OF_BAND", bi("The limit price is more than ±20% away from the current price.", "지정가가 현재가 대비 ±20% 범위를 벗어났습니다."), 400);
     }
     tif = req.tif ?? "Gtc";
   }
@@ -284,9 +285,9 @@ export async function placeOrder(db: Db, hl: HlGateway, user: SessionUser, req: 
   const sz = formatPerpSize(size, asset.szDecimals);
   const notional = new Decimal(sz).mul(mid);
   if (notional.gt(maxOrderUsd) && !req.reduceOnly) {
-    await reject(db, user, ctx.botId, "ORDER_TOO_LARGE", `주문 금액이 1회 한도(${maxOrderUsd.toFixed()} USDC)를 초과합니다.`, 400);
+    await reject(db, user, ctx.botId, "ORDER_TOO_LARGE", bi(`The order amount exceeds the per-order limit (${maxOrderUsd.toFixed()} USDC).`, `주문 금액이 1회 한도(${maxOrderUsd.toFixed()} USDC)를 초과합니다.`), 400);
   }
-  if (notional.lt(10)) throw badRequest("ORDER_TOO_SMALL", "Hyperliquid 최소 주문 금액(10 USDC) 미만입니다.");
+  if (notional.lt(10)) throw badRequest("ORDER_TOO_SMALL", bi("The order is below Hyperliquid's minimum order amount (10 USDC).", "Hyperliquid 최소 주문 금액(10 USDC) 미만입니다."));
 
   // 5. Record intent first (unique cloid), then send.
   const cloid = newCloid();
@@ -344,12 +345,12 @@ function interpretStatus(status: unknown): Partial<typeof orders.$inferInsert> {
 
 export async function cancelOrder(db: Db, hl: HlGateway, user: SessionUser, orderId: string) {
   const [order] = await db.select().from(orders).where(eq(orders.id, orderId)).limit(1);
-  if (!order || order.userId !== user.id) throw notFound("주문을 찾을 수 없습니다.");
-  if (order.status !== "RESTING") throw conflict("NOT_CANCELABLE", "미체결 주문만 취소할 수 있습니다.");
+  if (!order || order.userId !== user.id) throw notFound(bi("Order not found.", "주문을 찾을 수 없습니다."));
+  if (order.status !== "RESTING") throw conflict("NOT_CANCELABLE", bi("Only open orders can be canceled.", "미체결 주문만 취소할 수 있습니다."));
   const agent = await activeAgent(db, user.id, hl.network);
-  if (!agent) throw forbidden("거래 권한(에이전트) 승인이 필요합니다.");
+  if (!agent) throw forbidden(bi("You need to approve trading permission (agent wallet).", "거래 권한(에이전트) 승인이 필요합니다."));
   const asset = (await hl.perpAssets()).find((a) => a.name === order.coin);
-  if (!asset) throw badRequest("UNKNOWN_MARKET", "마켓 정보를 찾을 수 없습니다.");
+  if (!asset) throw badRequest("UNKNOWN_MARKET", bi("Market information not found.", "마켓 정보를 찾을 수 없습니다."));
   await hl.cancelByCloid(decryptAgentKey(agent.encryptedKey, agent.agentAddress), asset.index, order.cloid as `0x${string}`);
   const [saved] = await db.update(orders).set({ status: "CANCELED", updatedAt: new Date() }).where(eq(orders.id, order.id)).returning();
   return saved;

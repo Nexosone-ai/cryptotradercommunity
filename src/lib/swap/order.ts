@@ -1,5 +1,6 @@
 import Decimal from "decimal.js";
 import { getAddress, hashTypedData, isAddress, zeroAddress, type Address, type Hex } from "viem";
+import { bi } from "../i18n";
 
 /** Must match CtcP2PSwap.sol (EIP712("CTC P2P Swap", "1")). */
 export const SWAP_EIP712_NAME = "CTC P2P Swap";
@@ -87,9 +88,9 @@ export function hashSwapOrder(chainId: number, contract: Address, o: SwapOrder):
 /** Human amount ("12.5") → base units, exact; rejects more decimals than the token has. */
 export function toUnits(value: string, decimals: number): bigint {
   const v = value.trim();
-  if (!/^\d+(\.\d+)?$/.test(v)) throw new Error("숫자 형식이 올바르지 않습니다.");
+  if (!/^\d+(\.\d+)?$/.test(v)) throw new Error(bi("Invalid number format.", "숫자 형식이 올바르지 않습니다."));
   const [whole, frac = ""] = v.split(".");
-  if (frac.length > decimals) throw new Error(`소수점 이하 ${decimals}자리까지만 입력할 수 있습니다.`);
+  if (frac.length > decimals) throw new Error(bi(`You can enter at most ${decimals} decimal places.`, `소수점 이하 ${decimals}자리까지만 입력할 수 있습니다.`));
   return BigInt(whole) * 10n ** BigInt(decimals) + BigInt((frac + "0".repeat(decimals)).slice(0, decimals) || "0");
 }
 

@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { marketContext } from "@/lib/api";
 import { ApiError, handler, json } from "@/lib/http";
+import { bi } from "@/lib/i18n";
 
 const INTERVAL_MS = { "1m": 60e3, "5m": 300e3, "15m": 900e3, "1h": 3600e3, "4h": 14400e3, "1d": 86400e3 } as const;
 const query = z.object({
@@ -16,6 +17,6 @@ export const GET = handler(async (req: Request) => {
     const candles = await hl.candles(coin, interval, Date.now() - INTERVAL_MS[interval] * 300);
     return json({ network: hl.network, coin, interval, fetchedAt: new Date().toISOString(), candles });
   } catch {
-    throw new ApiError(503, "HL_UNAVAILABLE", "캔들 데이터를 불러오지 못했습니다.");
+    throw new ApiError(503, "HL_UNAVAILABLE", bi("Couldn't load candle data.", "캔들 데이터를 불러오지 못했습니다."));
   }
 });

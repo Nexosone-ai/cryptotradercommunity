@@ -2,15 +2,16 @@ import Decimal from "decimal.js";
 import { and, eq, gte } from "drizzle-orm";
 import type { Db } from "../db/client";
 import { fills, orders } from "../db/schema";
+import { bi } from "../i18n";
 
 export type Verification = "VERIFIED_LIVE" | "VERIFIED_HISTORICAL" | "BACKTEST" | "INSUFFICIENT_DATA" | "UNVERIFIED";
 
 export const VERIFICATION_LABELS: Record<Verification, string> = {
-  VERIFIED_LIVE: "실거래 검증",
-  VERIFIED_HISTORICAL: "과거 실거래 검증",
-  BACKTEST: "백테스트 (실거래 아님)",
-  INSUFFICIENT_DATA: "검증 데이터 부족",
-  UNVERIFIED: "미검증",
+  VERIFIED_LIVE: bi("Verified live", "실거래 검증"),
+  VERIFIED_HISTORICAL: bi("Verified (historical live)", "과거 실거래 검증"),
+  BACKTEST: bi("Backtest (not live)", "백테스트 (실거래 아님)"),
+  INSUFFICIENT_DATA: bi("Not enough verified data", "검증 데이터 부족"),
+  UNVERIFIED: bi("Unverified", "미검증"),
 };
 
 /** Minimum evidence before any figure is shown as verified. */
@@ -46,12 +47,18 @@ export interface BotMetrics {
   methodology: string;
 }
 
-export const METHODOLOGY =
+export const METHODOLOGY = bi(
+  "Only Hyperliquid fills (userFills) for orders this platform sent on behalf of a bot (cloid mapping) are counted. " +
+    "Realized PnL = sum of closedPnl; net PnL = realized PnL − trading fees − Builder fees. " +
+    "MDD is the largest drop (USDC) from the peak of the cumulative net realized PnL curve. Funding and unrealized PnL are separate and not included in these figures. " +
+    "ROI will be provided from Phase 2, once a capital base attributable to the bot is defined; deposits and withdrawals are excluded from performance (TWR). " +
+    `Verification criteria: at least ${MIN_CLOSING_TRADES} closing fills and at least ${MIN_DAYS} days of operation.`,
   "Hyperliquid 체결(userFills) 중 이 플랫폼이 봇 실행으로 전송한 주문(cloid 매핑)만 집계합니다. " +
-  "실현손익 = closedPnl 합계, 순손익 = 실현손익 − 거래 수수료 − Builder 수수료. " +
-  "MDD는 누적 순실현손익 곡선의 최고점 대비 최대 하락폭(USDC)입니다. 펀딩비·미실현손익은 별도이며 이 수치에 포함되지 않습니다. " +
-  "수익률(ROI)은 봇에 귀속 가능한 자본 기준이 확정되는 Phase 2부터 제공하며, 입출금은 성과에서 제외(TWR)합니다. " +
-  `검증 기준: 청산 체결 ${MIN_CLOSING_TRADES}건 이상, 운영 ${MIN_DAYS}일 이상.`;
+    "실현손익 = closedPnl 합계, 순손익 = 실현손익 − 거래 수수료 − Builder 수수료. " +
+    "MDD는 누적 순실현손익 곡선의 최고점 대비 최대 하락폭(USDC)입니다. 펀딩비·미실현손익은 별도이며 이 수치에 포함되지 않습니다. " +
+    "수익률(ROI)은 봇에 귀속 가능한 자본 기준이 확정되는 Phase 2부터 제공하며, 입출금은 성과에서 제외(TWR)합니다. " +
+    `검증 기준: 청산 체결 ${MIN_CLOSING_TRADES}건 이상, 운영 ${MIN_DAYS}일 이상.`,
+);
 
 export function computeMetrics(rows: FillLike[], now = new Date()): BotMetrics {
   const sorted = [...rows].sort((a, b) => a.time.getTime() - b.time.getTime());
