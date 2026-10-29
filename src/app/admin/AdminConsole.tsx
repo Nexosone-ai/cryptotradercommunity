@@ -14,6 +14,7 @@ const TABS = [
   ["revenue", "Revenue & settlement", "수익·정산"],
   ["payouts", "Payouts", "지급"],
   ["policy", "Fee policy", "수수료 정책"],
+  ["partners", "Referral partners", "추천 파트너"],
   ["partnerServices", "Partner services", "파트너 서비스"],
   ["swap", "Swap contract", "스왑 컨트랙트"],
   ["system", "System & risk", "시스템·위험"],
@@ -43,6 +44,7 @@ export function AdminConsole({ adminId }: { adminId: string }) {
       {tab === "revenue" && <Revenue />}
       {tab === "payouts" && <Payouts />}
       {tab === "policy" && <Policy />}
+      {tab === "partners" && <Partners />}
       {tab === "partnerServices" && <PartnerServicesAdmin />}
       {tab === "swap" && <SwapAdmin />}
       {tab === "system" && <SystemTab />}
@@ -70,20 +72,121 @@ function useMutate(after: () => void) {
   const { t, L } = useI18n();
   const [msg, setMsg] = useState<{ tone: "info" | "down"; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
-  const run = async (url: string, body: unknown, ok = t("Done", "완료")) => {
+  const run = async (url: string, body: unknown, ok = t("Done", "완료")): Promise<boolean> => {
     setBusy(true);
     setMsg(null);
     try {
       await apiFetch(url, { method: "POST", body });
       setMsg({ tone: "info", text: ok });
       after();
+      return true;
     } catch (e) {
       setMsg({ tone: "down", text: e instanceof Error ? L(e.message) : t("Failed", "실패") });
+      return false;
     } finally {
       setBusy(false);
     }
   };
   return { msg, busy, run };
+}
+
+interface PartnerRow {
+  id: string;
+  wallet: string;
+  referralCode: string;
+  eligibilityStatus: string;
+  createdAt: string;
+  direct: number;
+  indirect: number;
+}
+
+/** The referral program is not public: an admin appoints each partner personally here. */
+function Partners() {
+  const { L } = useI18n();
+  const { data, error, reload } = useLoad<{ partners: PartnerRow[] }>("/api/admin/partners");
+  const m = useMutate(reload);
+  const [wallet, setWallet] = useState("");
+  if (error) return <Notice tone="down">{L(error)}</Notice>;
+  if (!data) return <p className="text-sm text-muted">Loading…</p>;
+  return (
+    <div className="space-y-6" data-testid="admin-partners">
+      {m.msg && <Notice tone={m.msg.tone}>{m.msg.text}</Notice>}
+      <Notice tone="info">
+        The referral program is not offered publicly. Only partners you appoint here get a referral code and link; they see them
+        on their My page. The wallet must have signed in to the site once.
+      </Notice>
+      <Card>
+        <h2 className="mb-3 font-semibold">Appoint a partner</h2>
+        <form
+          className="flex flex-wrap gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void m.run("/api/admin/partners", { walletAddress: wallet }, "Partner appointed.").then((ok) => ok && setWallet(""));
+          }}
+        >
+          <input
+            aria-label="Partner wallet address"
+            placeholder="0x… wallet address"
+            value={wallet}
+            onChange={(e) => setWallet(e.target.value)}
+            className="num min-w-0 flex-1"
+          />
+          <button type="submit" className={buttonClass("primary", "sm")} disabled={m.busy || !wallet.trim()}>
+            Appoint partner
+          </button>
+        </form>
+      </Card>
+      <Card>
+        <h2 className="mb-3 font-semibold">Partners</h2>
+        {data.partners.length === 0 ? (
+          <p className="text-sm text-muted">No partners yet.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[640px] text-sm">
+              <thead className="text-left text-xs text-muted">
+                <tr>
+                  <th className="py-2">Wallet</th>
+                  <th>Code</th>
+                  <th>Status</th>
+                  <th className="text-right">Tier-1 / tier-2 referrals</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody className="num divide-y divide-line">
+                {data.partners.map((p) => (
+                  <tr key={p.id}>
+                    <td className="py-2">{shortAddress(p.wallet)}</td>
+                    <td>{p.referralCode}</td>
+                    <td>
+                      <Badge tone={p.eligibilityStatus === "ACTIVE" ? "up" : "warn"}>{p.eligibilityStatus}</Badge>
+                    </td>
+                    <td className="text-right">
+                      {p.direct} / {p.indirect}
+                    </td>
+                    <td className="text-right">
+                      <button
+                        className={buttonClass("secondary", "sm")}
+                        disabled={m.busy}
+                        onClick={() =>
+                          m.run(
+                            `/api/admin/partners/${p.id}`,
+                            { status: p.eligibilityStatus === "ACTIVE" ? "SUSPENDED" : "ACTIVE" },
+                            p.eligibilityStatus === "ACTIVE" ? "Partner suspended." : "Partner reactivated.",
+                          )
+                        }
+                      >
+                        {p.eligibilityStatus === "ACTIVE" ? "Suspend" : "Reactivate"}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Card>
+    </div>
+  );
 }
 
 interface PendingBot {

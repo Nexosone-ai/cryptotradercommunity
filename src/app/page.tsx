@@ -185,8 +185,7 @@ export default async function Home() {
               <>
                 Hyperliquid&apos;s base trading fees are collected by Hyperliquid. The platform&apos;s only revenue is the{" "}
                 <b className="text-text">additional Builder Fee</b> added to each order within the cap you approved with your signature.
-                Of the confirmed (settled) amount, 70% goes to the bot owner and 30% to the admin allocation pool (platform 6%, partners
-                24%).
+                Of the confirmed (settled) amount, 70% goes to the bot owner and 30% to the platform&apos;s admin-managed allocation pool.
               </>,
               <>
                 Hyperliquid 기본 거래 수수료는 Hyperliquid가 징수합니다. 플랫폼 수익은 사용자가 서명으로 승인한 상한 안에서 주문마다 붙는{" "}

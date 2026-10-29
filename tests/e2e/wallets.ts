@@ -81,6 +81,6 @@ export async function installTestWallet(context: BrowserContext, key: Hex) {
 export async function signInViaUi(page: Page) {
   await page.getByTestId("connect-wallet").click();
   await page.getByRole("checkbox").first().check();
-  await page.getByRole("button", { name: /연결하고 서명하기/ }).click();
-  await page.getByRole("button", { name: "로그아웃" }).waitFor();
+  await page.getByRole("button", { name: /Connect .* and sign/ }).click();
+  await page.getByRole("button", { name: "Sign out" }).waitFor();
 }

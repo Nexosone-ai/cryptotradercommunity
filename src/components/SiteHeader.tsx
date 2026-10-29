@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
-import { LanguageSwitch, useI18n } from "./I18nProvider";
+import { useI18n } from "./I18nProvider";
 import { shortAddress } from "@/lib/format";
 import { buttonClass, cx } from "./ui";
 import { ConnectModal } from "./wallet/ConnectModal";
@@ -64,7 +64,6 @@ export function SiteHeader() {
           ))}
         </nav>
         <div className="ml-auto flex items-center gap-2">
-          <LanguageSwitch className="hidden sm:flex" />
           {w.me?.user ? (
             <>
               <Link href="/portfolio" className="num hidden rounded-lg border border-line-strong px-3 py-1.5 text-xs sm:block">
@@ -91,7 +90,6 @@ export function SiteHeader() {
               {t(n.en, n.ko)}
             </Link>
           ))}
-          <LanguageSwitch className="my-2 w-fit sm:hidden" />
         </nav>
       )}
       {wrongChain && walletChain && (

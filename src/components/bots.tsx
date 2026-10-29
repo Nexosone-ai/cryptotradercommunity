@@ -133,7 +133,7 @@ export async function FeeBreakdown({ feeTenthsBp, builder, notional = 10_000 }: 
         <li>
           •{" "}
           {t(
-            "Of the confirmed (settled) Builder Fee, 70% goes to the bot owner and 30% to the admin distribution pool (platform 6% · tier-1 partner 14.4% · tier-2 partner 9.6%).",
+            "Of the confirmed (settled) Builder Fee, 70% goes to the bot owner and 30% to the platform's admin-managed distribution pool.",
             "정산 확정된 Builder Fee의 70%는 봇 등록자, 30%는 관리자 배분 풀(플랫폼 6% · 1차 파트너 14.4% · 2차 파트너 9.6%)로 배분됩니다.",
           )}
         </li>

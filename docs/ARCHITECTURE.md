@@ -21,7 +21,7 @@ Settlement Worker (상시 실행, Vercel 외부)        Bot Runner (Phase 2, 격
 ## 소스 구조
 | 경로 | 내용 |
 |---|---|
-| `src/app/**/page.tsx` | 화면: `/`, `/bots`, `/bots/[id]`, `/bots/register`, `/trade`, `/portfolio`, `/rankings`, `/ref/[code]`, `/partners`(→ `/portfolio#partner`), `/partner`, `/admin`, `/docs` |
+| `src/app/**/page.tsx` | 화면: `/`, `/bots`, `/bots/[id]`, `/bots/register`, `/trade`, `/portfolio`, `/rankings`, `/ref/[code]`, `/partner`, `/admin`, `/docs` |
 | `src/app/api/**/route.ts` | API (docs/API.md) |
 | `src/lib/config.ts` | 환경변수 → 설정. 누락 시 기능 비활성(사이트는 동작) |
 | `src/lib/db/schema.ts`, `drizzle/*.sql` | 스키마·마이그레이션(RLS, append-only 트리거, 분개 균형 제약, 정책 v1 시드) |
@@ -30,6 +30,7 @@ Settlement Worker (상시 실행, Vercel 외부)        Bot Runner (Phase 2, 격
 | `src/lib/fees/*` | 분배 엔진(bigint), 단위 변환, 예상 수수료 |
 | `src/lib/ledger/service.ts` | 정책 버전, 확정·배분 분개, 대사, claim, 지급 |
 | `src/lib/referral/service.ts` | 파트너 코드, 2단계 관계 고정, 수혜자 결정 |
+| `src/lib/referral/admin.ts` | 관리자 전용 파트너 지정·정지 (공개 가입 없음) |
 | `src/lib/trading/*` | agent 키 암호화, agent 승인 확인, Builder 승인 확인, **주문 게이트** |
 | `src/lib/settlement/ingest.ts` | 체결 수집 → fills/fee_events (멱등) |
 | `src/lib/performance/metrics.ts` | 봇 성과(검증 기준, MDD, 승률), 방법론 문구 |

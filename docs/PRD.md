@@ -9,7 +9,7 @@
 VISITOR(비로그인), TRADER, BOT_OWNER, PARTNER, ADMIN — 한 지갑이 여러 역할 보유.
 
 ## 정보 구조
-공개 메뉴: 봇 마켓 `/bots` · 트레이딩 `/trade` · 스왑 `/swap` · 랭킹 `/rankings` · 마이페이지 `/portfolio` · 가이드 `/guide`. 파트너 프로그램 안내·가입은 마이페이지(로그인 후) 파트너 섹션에만 있으며 `/partners`는 `/portfolio#partner`로 이동. 숨김(서버 권한 검사): `/partner`, `/admin`. 그 외 `/`, `/bots/[id]`, `/bots/register`, `/ref/[code]`, `/docs`.
+공개 메뉴: 봇 마켓 `/bots` · 트레이딩 `/trade` · 스왑 `/swap` · 랭킹 `/rankings` · 마이페이지 `/portfolio` · 가이드 `/guide`. 사이트는 영어 전용. 추천(파트너) 프로그램은 비공개 — 관리자가 콘솔에서 개별 지정하고, 지정된 파트너만 마이페이지에서 파트너 섹션을 본다. 숨김(서버 권한 검사): `/partner`, `/admin`. 그 외 `/`, `/bots/[id]`, `/bots/register`, `/ref/[code]`, `/docs`.
 
 ## 봇 상태 머신
 ```

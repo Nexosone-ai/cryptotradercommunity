@@ -13,7 +13,6 @@ import { dateTime, feeLabel, STATUS_LABELS } from "@/lib/format";
 import { getI18n } from "@/lib/i18n-server";
 import { payableBalance } from "@/lib/ledger/service";
 import { formatUsdcE8 } from "@/lib/money";
-import { ActivatePartner } from "./ActivatePartner";
 import { HlAccountSummary } from "./HlAccountSummary";
 import { PartnerProgram } from "./PartnerProgram";
 
@@ -198,44 +197,35 @@ export default async function PortfolioPage() {
         )}
       </section>
 
-      {/* The partner program lives only here (signed-in users); it is not in the public menu. */}
-      <section id="partner" className="scroll-mt-20" data-testid="partner-section">
-        <SectionTitle
-          title={t("Partner program", "파트너 프로그램")}
-          desc={t(
-            "Earn a share of the additional Builder Fee from trades that traders who signed up through your referral link actually fill on the platform.",
-            "추천 링크로 가입한 트레이더가 플랫폼을 통해 실제 체결한 거래에서 발생한 추가 Builder Fee의 일부를 받습니다.",
-          )}
-          action={partner ? <LinkButton href="/partner">{t("Partner dashboard", "파트너 대시보드")}</LinkButton> : undefined}
-        />
-        {partner ? (
+      {/* Referral partners are appointed by an admin; the section exists only for them. */}
+      {partner && (
+        <section id="partner" className="scroll-mt-20" data-testid="partner-section">
+          <SectionTitle
+            title="Referral partner"
+            desc="You were appointed as a referral partner. Share your link; you earn a share of the additional Builder Fee from trades your referred traders actually fill."
+            action={<LinkButton href="/partner">Partner dashboard</LinkButton>}
+          />
           <div className="space-y-4">
             <Card className="space-y-1 text-sm">
               <div>
-                {t("Partner code", "파트너 코드")} <b className="num text-accent">{partner.referralCode}</b>{" "}
+                Partner code <b className="num text-accent">{partner.referralCode}</b>{" "}
                 <Badge tone={partner.eligibilityStatus === "ACTIVE" ? "up" : "warn"}>
-                  {partner.eligibilityStatus === "ACTIVE" ? t("Active", "활성") : t("Payouts on hold", "지급 보류")}
+                  {partner.eligibilityStatus === "ACTIVE" ? "Active" : "Payouts on hold"}
                 </Badge>
               </div>
               <div className="text-muted">
-                {t("Referral link", "추천 링크")}{" "}
-                <span className="num break-all text-text">{new URL(`/ref/${partner.referralCode}`, cfg.appUrl).toString()}</span>
+                Referral link <span className="num break-all text-text">{new URL(`/ref/${partner.referralCode}`, cfg.appUrl).toString()}</span>
               </div>
             </Card>
             <details className="rounded-xl border border-line bg-panel p-4 text-sm">
-              <summary className="cursor-pointer font-semibold">{t("How partner earnings work", "파트너 수익 구조")}</summary>
+              <summary className="cursor-pointer font-semibold">How partner earnings work</summary>
               <div className="mt-4">
                 <PartnerProgram />
               </div>
             </details>
           </div>
-        ) : (
-          <div className="space-y-4">
-            <PartnerProgram />
-            <ActivatePartner />
-          </div>
-        )}
-      </section>
+        </section>
+      )}
     </div>
   );
 }

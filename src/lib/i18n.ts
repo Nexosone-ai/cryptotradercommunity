@@ -1,7 +1,7 @@
 /**
- * Site language. English is the default; Korean is chosen with the header
- * switch and remembered in a cookie. No URL prefixes: the same page renders
- * in the reader's language.
+ * Site language. The site is English-only: every reader gets DEFAULT_LOCALE
+ * (the Korean switch was removed). The Korean halves below are kept in the
+ * source but never shown.
  *
  * - Pages/components: `t(en, ko)` picks one of two values (strings or JSX).
  * - Server-side text that travels through APIs or shared labels (errors,
@@ -10,16 +10,10 @@
  *   API JSON is localized centrally in lib/http.ts.
  */
 export type Locale = "en" | "ko";
-export const LOCALES: readonly Locale[] = ["en", "ko"];
 export const DEFAULT_LOCALE: Locale = "en";
-export const LOCALE_COOKIE = "ctc_lang";
 
 // U+241E SYMBOL FOR RECORD SEPARATOR — never typed by users in practice.
 const SEP = "␞";
-
-export function parseLocale(value: string | null | undefined): Locale {
-  return value === "ko" ? "ko" : DEFAULT_LOCALE;
-}
 
 /** One message in both languages. Pass whole sentences; interpolate inside each half. */
 export function bi(en: string, ko: string): string {
@@ -54,14 +48,4 @@ export function makeI18n(locale: Locale): I18n {
     L: (text) => localize(text, locale),
     intl: locale === "ko" ? "ko-KR" : "en-US",
   };
-}
-
-/** Reads the locale from a raw Cookie header (route handlers). */
-export function localeFromCookieHeader(header: string | null | undefined): Locale {
-  if (!header) return DEFAULT_LOCALE;
-  for (const part of header.split(";")) {
-    const [k, v] = part.trim().split("=");
-    if (k === LOCALE_COOKIE) return parseLocale(v);
-  }
-  return DEFAULT_LOCALE;
 }

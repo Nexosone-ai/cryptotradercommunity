@@ -1,14 +1,8 @@
-import { cookies } from "next/headers";
-import { DEFAULT_LOCALE, LOCALE_COOKIE, makeI18n, parseLocale, type I18n, type Locale } from "./i18n";
+import { DEFAULT_LOCALE, makeI18n, type I18n, type Locale } from "./i18n";
 
-/** Reader's locale for server components, layouts and generateMetadata. */
+/** Reader's locale for server components, layouts and generateMetadata. The site is English-only. */
 export async function getLocale(): Promise<Locale> {
-  try {
-    return parseLocale((await cookies()).get(LOCALE_COOKIE)?.value);
-  } catch {
-    // Outside a request (build-time prerender): default language.
-    return DEFAULT_LOCALE;
-  }
+  return DEFAULT_LOCALE;
 }
 
 export async function getI18n(): Promise<I18n> {

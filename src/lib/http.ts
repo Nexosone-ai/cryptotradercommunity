@@ -1,11 +1,7 @@
-import { AsyncLocalStorage } from "node:async_hooks";
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { getConfig } from "./config";
-import { bi, DEFAULT_LOCALE, isBilingual, localeFromCookieHeader, localize, type Locale } from "./i18n";
-
-/** Locale of the request being handled; set by handler(). */
-const requestLocale = new AsyncLocalStorage<Locale>();
+import { bi, DEFAULT_LOCALE, isBilingual, localize } from "./i18n";
 
 /** Error with an HTTP status and a stable machine-readable code. */
 export class ApiError extends Error {
@@ -26,10 +22,9 @@ export const notFound = (msg = bi("Not found.", "찾을 수 없습니다.")) => 
 export const conflict = (code: string, msg: string) => new ApiError(409, code, msg);
 
 export function json(data: unknown, init?: ResponseInit) {
-  const locale = requestLocale.getStore() ?? DEFAULT_LOCALE;
-  // bigint → string; bilingual bi() strings → the reader's language.
+  // bigint → string; bilingual bi() strings → the site language (English).
   const replacer = (_k: string, v: unknown) =>
-    typeof v === "bigint" ? v.toString() : typeof v === "string" && isBilingual(v) ? localize(v, locale) : v;
+    typeof v === "bigint" ? v.toString() : typeof v === "string" && isBilingual(v) ? localize(v, DEFAULT_LOCALE) : v;
   return new NextResponse(JSON.stringify(data, replacer), {
     ...init,
     headers: { "content-type": "application/json", "cache-control": "no-store", ...init?.headers },
@@ -50,18 +45,14 @@ export function errorResponse(err: unknown) {
   return json({ error: { code: "INTERNAL", message: bi("Something went wrong on the server.", "서버 오류가 발생했습니다.") } }, { status: 500 });
 }
 
-/** Wraps a route handler with uniform error handling and response localization. */
+/** Wraps a route handler with uniform error handling. */
 export function handler<A extends unknown[]>(fn: (...args: A) => Promise<Response>) {
   return async (...args: A): Promise<Response> => {
-    const req = args[0] instanceof Request ? args[0] : null;
-    const locale = localeFromCookieHeader(req?.headers.get("cookie"));
-    return requestLocale.run(locale, async () => {
-      try {
-        return await fn(...args);
-      } catch (err) {
-        return errorResponse(err);
-      }
-    });
+    try {
+      return await fn(...args);
+    } catch (err) {
+      return errorResponse(err);
+    }
   };
 }
 

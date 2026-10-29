@@ -249,36 +249,6 @@ export default async function GuidePage() {
         id="signup"
         title={t("1. Sign up (log in with MetaMask)", "1. 가입하기 (MetaMask 로그인)")}
       >
-        <Card className="space-y-2">
-          <p className="font-semibold">
-            {t(
-              "Got a referral (invite) link? Open that link first",
-              "추천(초대) 링크가 있다면 — 먼저 그 링크로 접속하세요",
-            )}
-          </p>
-          <p className="text-muted">
-            {t(
-              <>
-                If you arrive through a <code className="num">…/ref/CODE</code>{" "}
-                link from a partner, you&rsquo;ll see &lsquo;✓ Referral code
-                saved.&rsquo; The referral is locked in{" "}
-                <b className="text-text">
-                  only once, at that wallet&rsquo;s first login
-                </b>
-                , and can&rsquo;t be changed later. Wallets that have already
-                signed up won&rsquo;t pick up a new referral.
-              </>,
-              <>
-                파트너에게 받은 <code className="num">…/ref/코드</code> 링크로
-                들어오면 &lsquo;✓ 추천 코드가 저장되었습니다.&rsquo;가 표시됩니다.
-                추천 관계는{" "}
-                <b className="text-text">그 지갑의 첫 로그인 때 한 번만</b> 고정되고
-                나중에 바꿀 수 없습니다. 이미 가입한 지갑에는 새로 등록되지
-                않습니다.
-              </>,
-            )}
-          </p>
-        </Card>
         <Steps
           items={[
             t(
@@ -797,8 +767,8 @@ export default async function GuidePage() {
                 you set with the slider in step 5 (Fees &amp; consent) of bot
                 registration. Every time an order placed by your bot is filled,{" "}
                 <b className="text-text">filled amount × fee rate</b> is added
-                on top. This is the only source of income for bot owners,
-                partners and the platform, and only one is charged per order.
+                on top. This is the only source of income for bot owners
+                and the platform, and only one is charged per order.
               </>,
               <>
                 <b className="text-text">② 추가 Builder Fee</b> — 여러분이 봇 등록
@@ -883,9 +853,7 @@ export default async function GuidePage() {
               {(
                 [
                   ["Bot owner (you)", "봇 등록자 (나)", "70%", 0.7],
-                  ["Platform net revenue", "플랫폼 최종 수익", "6%", 0.06],
-                  ["Tier-1 referral partner", "1차 추천 파트너", "14.4%", 0.144],
-                  ["Tier-2 referral partner", "2차 추천 파트너", "9.6%", 0.096],
+                  ["Platform (admin-managed pool)", "플랫폼 (관리자 배분 풀)", "30%", 0.3],
                 ] as const
               ).map(([en, ko, pct, share]) => (
                 <tr key={pct}>
@@ -901,7 +869,7 @@ export default async function GuidePage() {
         </div>
         <p className="text-xs text-faint">
           {t(
-            "These split ratios are the initial default policy. If a subscriber has no referrer, the partner shares are held as an unassigned reserve, and the bot owner's 70% stays the same. Policy changes never apply retroactively to past settlements.",
+            "These split ratios are the initial default policy. Policy changes never apply retroactively to past settlements.",
             "배분 비율은 초기 기본 정책입니다. 구독자에게 추천인이 없으면 파트너 몫은 미배정 예비금으로 보류되며 봇 등록자 몫(70%)은 그대로입니다. 정책이 바뀌어도 과거 정산에는 소급되지 않습니다.",
           )}
         </p>
@@ -1272,27 +1240,12 @@ export default async function GuidePage() {
             </>,
           )}
         </Faq>
-        <Faq
-          q={t(
-            "Can I enter a referral link later?",
-            "추천 링크를 나중에 입력할 수 있나요?",
-          )}
-        >
-          {t(
-            "No. The referral is locked in only at a wallet's first login. Open the referral link first, then log in for the first time.",
-            "아니요. 추천 관계는 지갑의 첫 로그인 때만 고정됩니다. 추천 링크로 먼저 접속한 뒤 처음 로그인하세요.",
-          )}
-        </Faq>
         <p className="text-muted">
           {t(
             <>
               For the official notices on fees, security and risk, see{" "}
               <Link href="/docs" className="underline">
                 Service, fees &amp; security
-              </Link>
-              ; for how referral earnings work, connect MetaMask and open{" "}
-              <Link href="/portfolio#partner" className="underline">
-                My page → Partner program
               </Link>
               .
             </>,
@@ -1301,11 +1254,7 @@ export default async function GuidePage() {
               <Link href="/docs" className="underline">
                 서비스·수수료·보안 문서
               </Link>
-              , 추천 수익 구조는 MetaMask 연결 후{" "}
-              <Link href="/portfolio#partner" className="underline">
-                마이페이지 → 파트너 프로그램
-              </Link>
-              에서 확인하세요.
+              를 확인하세요.
             </>,
           )}
         </p>

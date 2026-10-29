@@ -21,8 +21,11 @@ export function normalizeReferralCode(code: string): string | null {
   return REFERRAL_CODE_RE.test(c) ? c : null;
 }
 
-/** Activates the partner program for a user (idempotent). */
-export async function activatePartner(db: Db, userId: string, actorWallet: string) {
+/**
+ * Makes a user a referral partner (idempotent). The program is not open to the public:
+ * in the app only an admin grants it (`grantedByAdminId`), to people they arrange it with personally.
+ */
+export async function activatePartner(db: Db, userId: string, actorWallet: string, grantedByAdminId?: string) {
   const [existing] = await db.select().from(partners).where(eq(partners.userId, userId)).limit(1);
   if (existing) return existing;
   for (let attempt = 0; attempt < 5; attempt++) {
@@ -37,11 +40,14 @@ export async function activatePartner(db: Db, userId: string, actorWallet: strin
       .onConflictDoNothing()
       .returning();
     if (row) {
-      await db.insert(userRoles).values({ userId, role: "PARTNER", grantedBy: "self:partner-terms" }).onConflictDoNothing();
+      await db
+        .insert(userRoles)
+        .values({ userId, role: "PARTNER", grantedBy: grantedByAdminId ? `admin:${grantedByAdminId}` : "self:partner-terms" })
+        .onConflictDoNothing();
       await writeAudit(db, {
-        actorUserId: userId,
+        actorUserId: grantedByAdminId ?? userId,
         actorWallet,
-        action: "PARTNER_ACTIVATED",
+        action: grantedByAdminId ? "PARTNER_GRANTED" : "PARTNER_ACTIVATED",
         targetType: "partner",
         targetId: row.id,
       });

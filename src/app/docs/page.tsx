@@ -84,9 +84,8 @@ export default async function DocsPage() {
           <p>
             {t(
               <>
-                <b className="text-text">③ Split</b> — 100% of the Builder Fee actually received and confirmed is split 70% to the bot owner and 30% to the admin-managed
-                distribution pool (platform 6% · tier-1 partner 14.4% · tier-2 partner 9.6%). If there is no referrer, the partner shares are held as an unassigned reserve.
-                Policy changes are recorded as versions and never apply retroactively to past settlements.
+                <b className="text-text">③ Split</b> — 100% of the Builder Fee actually received and confirmed is split 70% to the bot owner and 30% to the platform&apos;s admin-managed
+                distribution pool. Policy changes are recorded as versions and never apply retroactively to past settlements.
               </>,
               <>
                 <b className="text-text">③ 배분</b> — 실제 수취·정산 확정된 Builder Fee 100%를 기준으로 봇 등록자 70%, 관리자 배분 풀 30%(플랫폼 6% · 1차 파트너 14.4% · 2차
@@ -138,7 +137,7 @@ export default async function DocsPage() {
           </li>
           <li>
             {t(
-              "Admin and partner screens and APIs check roles on the server. Settlement and admin actions are recorded in a tamper-evident, hash-chained audit log.",
+              "Admin screens and APIs check roles on the server. Settlement and admin actions are recorded in a tamper-evident, hash-chained audit log.",
               "관리자·파트너 화면과 API는 서버에서 역할을 검사합니다. 정산·관리 작업은 변경 불가능한 해시 체인 감사 로그에 기록됩니다.",
             )}
           </li>

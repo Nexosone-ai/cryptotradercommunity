@@ -21,8 +21,8 @@ function api(request: APIRequestContext, baseURL: string) {
 const botInput = (slug: string, fee = 20) => ({
   name: "E2E Trend",
   slug,
-  summary: "E2E 테스트용 추세 추종 봇입니다.",
-  description: "E2E 테스트에서만 사용하는 봇입니다. 이동평균 교차와 ATR 손절을 사용합니다.",
+  summary: "Trend-following bot for E2E tests.",
+  description: "A bot used only in E2E tests. Uses moving-average crossovers and an ATR stop loss.",
   strategyType: "TREND_FOLLOWING",
   markets: ["BTC-PERP"],
   direction: "BOTH",
@@ -49,7 +49,7 @@ test("no email/password login; MetaMask sign-in and logout work", async ({ brows
   expect(await page.evaluate(() => (window as unknown as { ethereum: { request(a: object): Promise<string> } }).ethereum.request({ method: "eth_chainId" }))).toBe("0x3e6");
   const me = await (await page.request.get("/api/me")).json();
   expect(me.user.walletAddress).toBe(account.address.toLowerCase());
-  await page.getByRole("button", { name: "로그아웃" }).click();
+  await page.getByRole("button", { name: "Sign out" }).click();
   await expect(page.getByTestId("connect-wallet")).toBeVisible();
   expect((await (await page.request.get("/api/me")).json()).user).toBeNull();
   await context.close();
@@ -60,7 +60,7 @@ test("switching the wallet account ends the session", async ({ browser }) => {
   await page.goto("/");
   await signInViaUi(page);
   await page.evaluate(() => (window as unknown as { __ctcSwitchAccount: (a: string) => void }).__ctcSwitchAccount("0x0000000000000000000000000000000000000001"));
-  await expect(page.getByText(/지갑 계정이 변경되어 로그아웃/)).toBeVisible();
+  await expect(page.getByText(/Your wallet account changed, so you were signed out/)).toBeVisible();
   await expect(page.getByTestId("connect-wallet")).toBeVisible();
   await context.close();
 });
@@ -76,12 +76,16 @@ test("/admin and /partner are blocked for regular users in UI and API", async ({
   expect((await r.get("/api/admin/bots/pending")).status()).toBe(403);
   expect((await r.post("/api/admin/fees/confirm", { eventIds: ["x"], reason: "x" })).status()).toBe(403);
   expect((await r.get("/api/partner/summary")).status()).toBe(403);
-  // Not linked from the main menu either; the partner program is only on My page.
+  // Users cannot make themselves partners; the referral program is not offered publicly.
+  expect((await r.post("/api/partner/activate", { acceptPartnerTerms: true })).status()).toBe(404);
+  expect((await r.post("/api/admin/partners", { walletAddress: "0x0000000000000000000000000000000000000001" })).status()).toBe(403);
+  // Not linked from the main menu either, and no partner section on My page.
   await page.goto("/");
   await expect(page.locator('header a[href="/admin"], header a[href="/partner"], header a[href="/partners"]')).toHaveCount(0);
-  await page.goto("/partners");
-  await expect(page).toHaveURL(/\/portfolio#partner$/);
-  await expect(page.getByTestId("activate-partner")).toBeVisible();
+  expect((await page.goto("/partners"))!.status()).toBe(404);
+  await page.goto("/portfolio");
+  await expect(page.getByRole("heading", { name: "My page" })).toBeVisible();
+  await expect(page.getByTestId("partner-section")).toHaveCount(0);
   await context.close();
 });
 
@@ -115,24 +119,24 @@ test("bot lifecycle: forged owner ignored, hidden until approved, admin approves
   await admin.page.goto("/");
   await signInViaUi(admin.page);
   await admin.page.goto("/admin");
-  await expect(admin.page.getByRole("heading", { name: "관리자" })).toBeVisible();
+  await expect(admin.page.getByRole("heading", { name: "Admin" })).toBeVisible();
   await expect(admin.page.getByRole("link", { name: /E2E Trend/ })).toBeVisible();
-  await admin.page.getByRole("button", { name: "승인", exact: true }).click();
-  await expect(admin.page.getByText("승인했습니다")).toBeVisible();
+  await admin.page.getByRole("button", { name: "Approve", exact: true }).click();
+  await expect(admin.page.getByText(/^Approved\. The owner must press/)).toBeVisible();
 
   // Approved but not yet live → still hidden; owner publishes → visible with verified wallet.
   expect((await anon.request.get(`/api/bots/${slug}`)).status()).toBe(404);
   await owner.page.goto("/portfolio");
-  await expect(owner.page.getByRole("link", { name: "공개하기 →" })).toBeVisible();
+  await expect(owner.page.getByRole("link", { name: "Publish →" })).toBeVisible();
   await owner.page.goto(`/bots/${slug}`);
   const banner = owner.page.getByTestId("publish-banner");
-  await expect(banner).toContainText("아직 봇 마켓에 보이지 않습니다");
-  await banner.getByRole("button", { name: "마켓에 공개 (LIVE)" }).click();
+  await expect(banner).toContainText("not in the bot market yet");
+  await banner.getByRole("button", { name: "Publish to market (LIVE)" }).click();
   await expect(banner).toBeHidden();
   const page = await anon.newPage();
   await page.goto(`/bots/${slug}`);
   await expect(page.getByRole("heading", { name: "E2E Trend" })).toBeVisible();
-  await expect(page.getByText("검증 데이터 부족").first()).toBeVisible();
+  await expect(page.getByText("Not enough verified data").first()).toBeVisible();
   await expect(page.getByText(owner.account.address)).toBeVisible();
 
   // Subscriber consents; a fee increase then requires re-consent.
@@ -162,23 +166,38 @@ test("manual order is refused without trading permission (server gate)", async (
   await context.close();
 });
 
-test("partner activation, referral link and two-tier relation", async ({ browser, baseURL }) => {
-  const { page, context } = await walletPage(browser, E2E_KEYS.partner);
+test("admin appoints a partner; referral link and two-tier relation", async ({ browser }) => {
+  const { page, context, account } = await walletPage(browser, E2E_KEYS.partner);
   await page.goto("/");
   await signInViaUi(page);
-  // Join from the Partner program section of My page.
+  await page.goto("/portfolio");
+  await expect(page.getByRole("heading", { name: "My page" })).toBeVisible();
+  await expect(page.getByTestId("partner-section")).toHaveCount(0);
+
+  // The admin appoints this wallet in the admin console.
+  const admin = await walletPage(browser, E2E_KEYS.admin);
+  await admin.page.goto("/");
+  await signInViaUi(admin.page);
+  await admin.page.goto("/admin");
+  await admin.page.getByRole("button", { name: "Referral partners" }).click();
+  await admin.page.getByLabel("Partner wallet address").fill(account.address);
+  await admin.page.getByRole("button", { name: "Appoint partner" }).click();
+  await expect(admin.page.getByText("Partner appointed.")).toBeVisible();
+  await expect(admin.page.getByTestId("admin-partners").getByText("ACTIVE", { exact: true })).toBeVisible();
+  await admin.context.close();
+
+  // Now the partner sees the section on My page and reaches the dashboard from it.
   await page.goto("/portfolio");
   const section = page.getByTestId("partner-section");
-  await section.getByTestId("activate-partner").getByRole("checkbox").check();
-  await section.getByRole("button", { name: "파트너 시작하기" }).click();
-  await section.getByRole("link", { name: "파트너 대시보드" }).first().waitFor();
+  await expect(section).toBeVisible();
   const me0 = await (await page.request.get("/api/me")).json();
   const referralCode: string = me0.partner.referralCode;
   expect(referralCode).toMatch(/^[A-Z2-9]{8}$/);
-  await section.getByRole("link", { name: "파트너 대시보드" }).first().click();
+  await expect(section.getByText(`/ref/${referralCode}`)).toBeVisible();
+  await section.getByRole("link", { name: "Partner dashboard" }).click();
   await expect(page).toHaveURL(/\/partner$/);
   await expect(page.getByText(referralCode).first()).toBeVisible();
-  await expect(page.getByRole("link", { name: "CSV 내보내기" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Export CSV" })).toBeVisible();
 
   // A brand-new wallet arriving via the link is registered under this partner.
   const fresh = await browser.newContext();
@@ -187,11 +206,11 @@ test("partner activation, referral link and two-tier relation", async ({ browser
   await installTestWallet(fresh, key);
   const p2 = await fresh.newPage();
   await p2.goto(`/ref/${referralCode}`);
-  await expect(p2.getByText("추천 코드가 저장되었습니다")).toBeVisible();
-  await p2.getByRole("button", { name: "MetaMask로 가입하기" }).click();
+  await expect(p2.getByText("✓ Referral code saved.")).toBeVisible();
+  await p2.getByRole("button", { name: "Sign up with MetaMask" }).click();
   await p2.getByRole("checkbox").first().check();
-  await p2.getByRole("button", { name: /연결하고 서명하기/ }).click();
-  await p2.getByRole("button", { name: "로그아웃" }).waitFor();
+  await p2.getByRole("button", { name: /Connect .* and sign/ }).click();
+  await p2.getByRole("button", { name: "Sign out" }).waitFor();
   const me = await (await p2.request.get("/api/me")).json();
   expect(me.referredBy.code).toBe(referralCode);
   expect(me.user.walletAddress).toBe(privateKeyToAccount(key).address.toLowerCase());
@@ -204,9 +223,9 @@ test("partner activation, referral link and two-tier relation", async ({ browser
 
 test("live Hyperliquid testnet market data is shown on /trade", async ({ page }) => {
   await page.goto("/trade");
-  await expect(page.getByText("TESTNET — 실제 자금 아님")).toBeVisible();
-  await expect(page.getByText(/Hyperliquid 캔들 · .* 갱신/)).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByText("● 실시간")).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText("TESTNET — not real funds")).toBeVisible();
+  await expect(page.getByText(/Hyperliquid candles · updated/)).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText(/● Live/)).toBeVisible({ timeout: 30_000 });
 });
 
 test("swap page: 5 chains, locked until a contract is deployed, custom token added from chain metadata", async ({ browser, baseURL }) => {
@@ -216,7 +235,7 @@ test("swap page: 5 chains, locked until a contract is deployed, custom token add
     await expect(anon.getByRole("tab", { name: new RegExp(name) })).toBeVisible();
   }
   await expect(anon.getByRole("tab", { name: /BEP-20/ })).toBeVisible();
-  await expect(anon.getByText(/아직 스왑 컨트랙트가 배포되지 않아/)).toBeVisible();
+  await expect(anon.getByText(/No swap contract has been deployed on this chain yet/)).toBeVisible();
   await expect(anon.locator('header a[href="/swap"]')).toBeVisible();
   await anon.close();
 
@@ -245,11 +264,11 @@ test("swap page: 5 chains, locked until a contract is deployed, custom token add
 test("swap page and docs state: no platform swap fee; each party is responsible for their swap", async ({ page }) => {
   await page.goto("/swap");
   const notices = page.getByTestId("swap-notices");
-  await expect(notices).toContainText("스왑에 대한 수수료는 플랫폼에서 부과하지 않습니다.");
-  await expect(notices).toContainText("스왑에 대한 모든 책임은 스왑을 진행하는 각자가 책임을 집니다.");
+  await expect(notices).toContainText("The platform charges no fee for swaps.");
+  await expect(notices).toContainText("Each party to a swap is solely responsible for it.");
   await page.goto("/docs#swap");
-  await expect(page.locator("#swap")).toContainText("스왑에 대한 수수료는 플랫폼에서 부과하지 않습니다.");
-  await expect(page.locator("#swap")).toContainText("스왑을 진행하는 각자가 책임을 집니다.");
+  await expect(page.locator("#swap")).toContainText("The platform charges no fee for swaps.");
+  await expect(page.locator("#swap")).toContainText("Each party to a swap is solely responsible for it.");
 });
 
 test("partner billing: bank top-up → admin credit → customer invoice → payment confirmed → earnings", async ({ browser, baseURL }) => {
@@ -261,19 +280,25 @@ test("partner billing: bank top-up → admin credit → customer invoice → pay
   await page.goto("/");
   await signInViaUi(page);
   const r = api(page.request, baseURL!);
-  expect((await r.post("/api/partner/activate", { acceptPartnerTerms: true })).status()).toBe(200);
-  await page.reload();
+  const partnerWallet = (await (await page.request.get("/api/me")).json()).user.walletAddress;
+
+  // Partners are appointed by the admin.
+  const admin = await walletPage(browser, E2E_KEYS.admin);
+  await admin.page.goto("/");
+  await signInViaUi(admin.page);
+  const ra = api(admin.page.request, baseURL!);
+  expect((await ra.post("/api/admin/partners", { walletAddress: partnerWallet })).status()).toBe(201);
 
   // Top-up request shows the company account and a reference code.
   await page.goto("/partner");
   await expect(page.getByTestId("partner-services")).toBeVisible();
-  await expect(page.getByText(/영상 생성 서비스\(fal.ai\)가 아직 설정되지 않았습니다/)).toBeVisible();
-  await page.getByRole("tab", { name: "크레딧" }).click();
+  await expect(page.getByText(/The video generation service \(fal.ai\) is not set up yet/)).toBeVisible();
+  await page.getByRole("tab", { name: "Credits" }).click();
   // Packages are priced in KRW from a live exchange rate, VAT included.
   const packages = page.getByTestId("credit-packages");
   await expect(packages.getByText("$50", { exact: true })).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByText(/원화 금액은 부가세 10% 포함/)).toBeVisible();
-  await packages.getByRole("button", { name: "구매 요청" }).first().click();
+  await expect(page.getByText(/KRW amounts include 10% VAT/)).toBeVisible();
+  await packages.getByRole("button", { name: "Request purchase" }).first().click();
   const instructions = page.getByTestId("topup-instructions");
   await expect(instructions.getByText("000-111-222")).toBeVisible();
   await expect(instructions.getByText(/^₩[\d,]+$/)).toBeVisible();
@@ -281,10 +306,6 @@ test("partner billing: bank top-up → admin credit → customer invoice → pay
   expect(ref).toMatch(/^TOP-/);
 
   // Admin confirms the deposit.
-  const admin = await walletPage(browser, E2E_KEYS.admin);
-  await admin.page.goto("/");
-  await signInViaUi(admin.page);
-  const ra = api(admin.page.request, baseURL!);
   const list = await (await admin.page.request.get("/api/admin/partner-services")).json();
   const topup = list.topups.find((x: { t: { referenceCode: string } }) => x.t.referenceCode === ref).t;
   // VAT-inclusive KRW amount locked into the request: total = supply + floor(supply × 10%).
@@ -306,7 +327,7 @@ test("partner billing: bank top-up → admin credit → customer invoice → pay
   expect(summary.creditE8).toBe("5000000000");
   expect(summary.invoicePayableE8).toBe("4000000000");
   await pub.reload();
-  await expect(pub.getByText("입금 확인")).toBeVisible();
+  await expect(pub.getByText("Payment received")).toBeVisible();
   // Non-admins cannot confirm payments.
   expect((await r.post(`/api/admin/partner-services/invoices/${inv.invoice.id}/paid`, {})).status()).toBe(403);
   await pub.close();
@@ -328,14 +349,14 @@ test("strategy source: Pine Script pasted in the wizard is analysed, stored priv
 
   // Wizard: attach the script and see the detected header.
   await page.goto("/bots/register");
-  await page.getByRole("button", { name: /전략 · 소스코드/ }).click();
-  await page.getByRole("button", { name: "+ 소스코드 첨부" }).click();
-  await page.getByLabel("코드 붙여넣기").fill(pine);
+  await page.getByRole("button", { name: /Strategy & source code/ }).click();
+  await page.getByRole("button", { name: "+ Attach source code" }).click();
+  await page.getByLabel("Paste code").fill(pine);
   const meta = page.getByTestId("pine-meta");
   await expect(meta.getByText("Pine v6")).toBeVisible();
   await expect(meta.getByText("indicator", { exact: true })).toBeVisible();
-  await expect(meta.getByText("입력 12개")).toBeVisible();
-  await expect(page.getByText(/indicator\(\) 스크립트는 신호만 만들고/)).toBeVisible();
+  await expect(meta.getByText("12 inputs")).toBeVisible();
+  await expect(page.getByText(/indicator\(\) scripts only generate signals/)).toBeVisible();
 
   // Saved bot (via API with the same payload the wizard sends): owner sees the code, others don't.
   const slug = `src-${Date.now()}`;
@@ -346,8 +367,8 @@ test("strategy source: Pine Script pasted in the wizard is analysed, stored priv
   expect(res.status()).toBe(201);
   await page.goto(`/bots/${slug}`);
   const panel = page.getByTestId("bot-source");
-  await expect(panel.getByText("비공개")).toBeVisible();
-  await panel.getByRole("button", { name: "코드 보기" }).click();
+  await expect(panel.getByText("Private")).toBeVisible();
+  await panel.getByRole("button", { name: "View code" }).click();
   await expect(panel.locator("pre")).toContainText("RSI DIV + LTF DELTA + EMA FILTER V11");
   const anon = await browser.newContext();
   expect((await anon.request.get(`/api/bots/${slug}`)).status()).toBe(404);
@@ -360,29 +381,24 @@ test("beginner guide is public and linked from the header", async ({ page }) => 
   await expect(page.locator('header a[href="/guide"]').first()).toBeAttached();
   await expect(page.locator('footer a[href="/guide"]')).toBeAttached();
   await page.goto("/guide");
-  await expect(page.getByRole("heading", { level: 1 })).toContainText("이용 가이드");
-  for (const h of ["1. 가입하기", "2. 봇 등록하기", "3. 수수료(커미션) 설정 자세히", "4. 심사", "5. 수익 확인과 지급"]) {
+  await expect(page.getByRole("heading", { level: 1 })).toContainText("User guide");
+  for (const h of ["1. Sign up", "2. Register a bot", "3. Fee (commission) settings in detail", "4. Review", "5. Earnings and payouts"]) {
     await expect(page.getByRole("heading", { level: 2, name: new RegExp(h.replace(/[()]/g, "\\$&")) })).toBeVisible();
   }
-  await expect(page.getByText("체결 금액 10,000 USDC 기준", { exact: false })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /per 10,000 USDC filled/ })).toBeVisible();
 });
 
-test("English is the default language; the header switch changes the site and API messages to Korean", async ({ browser }) => {
-  const ctx = await browser.newContext({ storageState: { cookies: [], origins: [] } });
-  const page = await ctx.newPage();
+test("the site is English-only: no language switch, English UI and API messages", async ({ page }) => {
   await page.goto("/");
+  await expect(page.locator("html")).toHaveAttribute("lang", "en");
+  await expect(page.getByTestId("connect-wallet")).toHaveText("Connect MetaMask");
+  await expect(page.getByRole("button", { name: "한국어" })).toHaveCount(0);
+  // A leftover Korean cookie from the old switch changes nothing.
+  await page.context().addCookies([{ name: "ctc_lang", value: "ko", url: page.url() }]);
+  await page.reload();
   await expect(page.locator("html")).toHaveAttribute("lang", "en");
   await expect(page.getByTestId("connect-wallet")).toHaveText("Connect MetaMask");
   const missing = await page.request.get("/api/bots/does-not-exist");
   expect(missing.status()).toBe(404);
   expect((await missing.json()).error.message).not.toMatch(/[가-힣]/);
-
-  await page.getByRole("button", { name: "한국어" }).first().click();
-  await expect(page.locator("html")).toHaveAttribute("lang", "ko");
-  await expect(page.getByTestId("connect-wallet")).toHaveText("MetaMask 연결");
-  expect((await (await page.request.get("/api/bots/does-not-exist")).json()).error.message).toMatch(/[가-힣]/);
-
-  await page.getByRole("button", { name: "EN" }).first().click();
-  await expect(page.locator("html")).toHaveAttribute("lang", "en");
-  await ctx.close();
 });
