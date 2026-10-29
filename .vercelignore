@@ -1,0 +1,14 @@
+# Local-only files that must never be uploaded to Vercel (it builds from source).
+.data
+.next
+.next-e2e
+test-results
+playwright-report
+.env*
+!.env.example
+contracts/node_modules
+contracts/cache
+contracts/artifacts
+.agents
+.claude
+skills-lock.json

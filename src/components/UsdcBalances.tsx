@@ -5,6 +5,7 @@ import { useState } from "react";
 import { useI18n } from "./I18nProvider";
 import { buttonClass, Notice, Stat } from "./ui";
 import { useWallet } from "./wallet/WalletProvider";
+import { DepositPanel } from "./DepositPanel";
 import { usd } from "@/lib/format";
 import { hlErrorMessage, userExchange } from "@/lib/hl-browser";
 
@@ -77,6 +78,8 @@ export function UsdcBalances({ view, onChange }: { view: UsdcBalancesView; onCha
         <Stat label="Hyperliquid Spot USDC" value={view.spot ? usd(spotAvailable.toFixed()) : "—"} hint={dec(view.spot?.usdcHold).gt(0) ? `${usd(view.spot!.usdcHold)} on hold` : "Move to Perps to trade"} />
         <Stat label="Hyperliquid Perps (trading)" value={usd(view.perpsValue)} hint={`Withdrawable ${usd(view.perpsWithdrawable)}`} tone="up" />
       </div>
+
+      <DepositPanel onDeposited={onChange} />
 
       {evmUsdc.gt(0) && (
         <Notice tone="warn">

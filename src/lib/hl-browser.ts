@@ -27,6 +27,6 @@ export function hlErrorMessage(err: unknown): string {
   const e = err as { code?: number; message?: string; cause?: { code?: number } };
   if (e?.code === 4001 || e?.cause?.code === 4001) return bi("The signature was rejected in MetaMask.", "MetaMask에서 서명을 거절했습니다.");
   const msg = e?.message ?? String(err);
-  if (/Must deposit before performing actions/i.test(msg)) return bi("Deposit USDC into your Hyperliquid account before approving.", "Hyperliquid 계정에 먼저 USDC를 입금해야 승인할 수 있습니다.");
+  if (/Must deposit before performing actions/i.test(msg)) return bi("Deposit USDC into your Hyperliquid account before approving — use Deposit USDC to Hyperliquid on this page.", "Hyperliquid 계정에 먼저 USDC를 입금해야 승인할 수 있습니다.");
   return msg;
 }

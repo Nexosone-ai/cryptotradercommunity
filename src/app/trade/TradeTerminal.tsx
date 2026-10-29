@@ -10,6 +10,7 @@ import { dateTime, feeLabel, usd } from "@/lib/format";
 import { bi } from "@/lib/i18n";
 import { CandleChart } from "./CandleChart";
 import { OrderBook } from "./OrderBook";
+import { DepositPanel } from "@/components/DepositPanel";
 import { PermissionsPanel, type AccountPermissions } from "./PermissionsPanel";
 
 interface Market {
@@ -214,9 +215,12 @@ export function TradeTerminal({ config }: { config: PublicConfig }) {
               {tab === "fills" && <FillsTable fills={fills} />}
             </div>
           </div>
-          <div className="rounded-xl border border-line bg-panel p-4">
-            <h2 className="mb-3 font-semibold">{t("Approvals before live trading", "실거래 전 승인")}</h2>
-            <PermissionsPanel config={config} perms={account} onChange={loadAccount} />
+          <div className="space-y-4">
+            <div className="rounded-xl border border-line bg-panel p-4">
+              <h2 className="mb-3 font-semibold">{t("Approvals before live trading", "실거래 전 승인")}</h2>
+              <PermissionsPanel config={config} perms={account} onChange={loadAccount} />
+            </div>
+            {w.me?.user && <DepositPanel onDeposited={loadAccount} />}
           </div>
         </div>
       )}

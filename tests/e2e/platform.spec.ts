@@ -55,8 +55,15 @@ test("no email/password login; MetaMask sign-in and logout work", async ({ brows
   await expect(balances).toContainText("Hyperliquid Spot USDC", { timeout: 30_000 });
   await expect(balances).toContainText("Hyperliquid Perps (trading)");
   await expect(balances.getByRole("button", { name: "Transfer" })).toBeDisabled();
-  await balances.getByLabel("Amount (USDC)").fill("5");
+  await balances.getByLabel("Amount (USDC)", { exact: true }).fill("5");
   await expect(balances).toContainText("That's more than is available.");
+  // Deposit from Arbitrum into Hyperliquid, with the 5 USDC minimum enforced before MetaMask opens.
+  const deposit = page.getByTestId("deposit-panel");
+  await expect(deposit).toContainText("Deposit USDC to Hyperliquid");
+  await expect(deposit).toContainText("Arbitrum Sepolia");
+  await deposit.getByLabel("Deposit amount (USDC)").fill("3");
+  await expect(deposit).toContainText("minimum deposit is 5 USDC");
+  await expect(deposit.getByRole("button", { name: "Deposit", exact: true })).toBeDisabled();
   await page.getByRole("button", { name: "Sign out" }).click();
   await expect(page.getByTestId("connect-wallet")).toBeVisible();
   expect((await (await page.request.get("/api/me")).json()).user).toBeNull();
