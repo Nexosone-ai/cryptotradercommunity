@@ -24,7 +24,8 @@ export const GET = handler(async () => {
     hlError = bi("Couldn't load your Hyperliquid account information.", "Hyperliquid 계정 정보를 불러오지 못했습니다.");
   }
   // Where the user's USDC is: HyperEVM (not tradable yet) → Hyperliquid spot → perps (trading).
-  const [spot, hyperEvm] = await Promise.all([
+  const [mode, spot, hyperEvm] = await Promise.all([
+    hl.accountMode(user.walletAddress).catch(() => null),
     hl
       .spotBalances(user.walletAddress)
       .then((b) => {
@@ -40,6 +41,7 @@ export const GET = handler(async () => {
     fetchedAt: new Date().toISOString(),
     hlError,
     state,
+    mode,
     spot,
     hyperEvm,
     openOrders,

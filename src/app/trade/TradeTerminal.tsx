@@ -11,6 +11,7 @@ import { bi } from "@/lib/i18n";
 import { CandleChart } from "./CandleChart";
 import { OrderBook } from "./OrderBook";
 import { DepositPanel } from "@/components/DepositPanel";
+import { tradingBalance, type AccountMode } from "@/lib/hyperliquid/balance";
 import { PermissionsPanel, type AccountPermissions } from "./PermissionsPanel";
 
 interface Market {
@@ -33,6 +34,8 @@ interface Account extends AccountPermissions {
   fetchedAt: string;
   hlError: string | null;
   state: { marginSummary?: { accountValue: string; totalMarginUsed: string }; withdrawable?: string; assetPositions?: Position[] } | null;
+  mode?: AccountMode | null;
+  spot?: { usdcTotal: string; usdcHold: string } | null;
   openOrders: { coin: string; side: string; limitPx: string; sz: string; oid: number; timestamp: number }[];
   orders: { id: string; coin: string; side: string; orderType: string; price: string; size: string; status: string; builderFeeTenthsBp: number; error: string | null; createdAt: string; source: string }[];
 }
@@ -261,7 +264,16 @@ function OrderForm({
     () => ({ base: notional * FEE_TAKER, builder: (notional * fee) / 100_000 }),
     [notional, fee],
   );
-  const accountValue = account?.state?.marginSummary?.accountValue;
+  // Unified accounts report their USDC in spot (hyperliquid/balance.ts).
+  const accountValue = account
+    ? tradingBalance({
+        mode: account.mode,
+        perpsValue: account.state?.marginSummary?.accountValue,
+        perpsWithdrawable: account.state?.withdrawable,
+        spotUsdcTotal: account.spot?.usdcTotal,
+        spotUsdcHold: account.spot?.usdcHold,
+      }).value
+    : undefined;
   const ready = Boolean(account?.agent) && (fee === 0 || (account?.builder.approvedMaxTenthsBp ?? 0) >= fee);
 
   async function submit() {

@@ -10,6 +10,7 @@ import { executeSignal, retryStaleSignals } from "@/lib/engine/execute";
 import { rotateWebhookToken, setOrderUsd } from "@/lib/engine/manage";
 import { recordSignal, webhookTokenMatches, type TargetAction } from "@/lib/engine/signals";
 import { runTrendTick } from "@/lib/engine/trend";
+import { subscriberReadiness } from "@/lib/engine/readiness";
 import type { HlFill, HlOrderWire } from "@/lib/hyperliquid/gateway";
 import { prepareAgent, verifyAgent } from "@/lib/trading/service";
 import { fakeHl } from "../helpers/fake-hl";
@@ -296,5 +297,17 @@ describe("bot execution engine", () => {
       process.env.BOT_ENGINE_ENABLED = "true";
       delete process.env.MAINNET_TRADING_ENABLED;
     }
+  });
+
+  it("readiness counts a Unified account's spot USDC as its trading balance", async () => {
+    const { bot } = await liveBot(db);
+    const { trader, sub } = await subscriber(db, ex, bot.id, 100);
+    ex.hl.accountMode = async () => "unifiedAccount";
+    ex.hl.spotBalances = async () => [{ coin: "USDC", total: "48.75", hold: "0" }];
+    ex.hl.clearinghouseState = async () => ({ marginSummary: { accountValue: "0.0" }, withdrawable: "0.0", assetPositions: [] });
+    const { bots } = await import("@/lib/db/schema");
+    const [row] = await db.select().from(bots).where(eq(bots.id, bot.id));
+    const items = await subscriberReadiness(db, ex.hl, trader, row, sub);
+    expect(items.find((i) => i.key === "funds")).toMatchObject({ ok: true, label: "Hyperliquid account value: 48.75 USDC" });
   });
 });

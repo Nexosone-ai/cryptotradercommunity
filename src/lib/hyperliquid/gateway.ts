@@ -2,6 +2,7 @@ import "server-only";
 import { ExchangeClient, HttpTransport, InfoClient } from "@nktkas/hyperliquid";
 import { privateKeyToAccount } from "viem/accounts";
 import type { HlNetwork } from "../config";
+import type { AccountMode } from "./balance";
 
 /**
  * Thin, injectable wrapper over the Hyperliquid Info/Exchange APIs.
@@ -60,6 +61,8 @@ export interface HlGateway {
   clearinghouseState(user: string): Promise<unknown>;
   /** HyperCore spot balances (USDC sits here before it is moved to perps). */
   spotBalances(user: string): Promise<{ coin: string; total: string; hold: string }[]>;
+  /** Standard ("default"), unifiedAccount, portfolioMargin or disabled. */
+  accountMode(user: string): Promise<AccountMode>;
   openOrders(user: string): Promise<unknown[]>;
   userFills(user: string): Promise<HlFill[]>;
   candles(coin: string, interval: string, startTime: number): Promise<unknown[]>;
@@ -108,6 +111,7 @@ export function createHlGateway(network: HlNetwork): HlGateway {
       return { builderRewards: r.builderRewards, unclaimedRewards: r.unclaimedRewards, claimedRewards: r.claimedRewards };
     },
     clearinghouseState: (user) => info.clearinghouseState({ user: user as `0x${string}` }),
+    accountMode: (user) => info.userAbstraction({ user: user as `0x${string}` }),
     async spotBalances(user) {
       const s = await info.spotClearinghouseState({ user: user as `0x${string}` });
       return s.balances.map((b) => ({ coin: b.coin, total: b.total, hold: b.hold }));

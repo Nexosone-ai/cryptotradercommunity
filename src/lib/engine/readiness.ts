@@ -5,6 +5,7 @@ import { getConfig } from "../config";
 import type { Db } from "../db/client";
 import type { botSubscriptions, bots } from "../db/schema";
 import { feeLabel } from "../format";
+import { tradingBalance } from "../hyperliquid/balance";
 import type { HlGateway } from "../hyperliquid/gateway";
 import { activeAgent } from "../trading/service";
 import { engineAvailability } from "./execute";
@@ -82,10 +83,18 @@ export async function subscriberReadiness(
     }
   }
 
+  // Unified/portfolio-margin accounts report their USDC in spot, not perps (see hyperliquid/balance.ts).
   let accountValue: Decimal | null = null;
   try {
-    const state = (await hl.clearinghouseState(user.walletAddress)) as { marginSummary?: { accountValue?: string } };
-    accountValue = new Decimal(state.marginSummary?.accountValue ?? "0");
+    const [mode, state, spot] = await Promise.all([
+      hl.accountMode(user.walletAddress).catch(() => null),
+      hl.clearinghouseState(user.walletAddress) as Promise<{ marginSummary?: { accountValue?: string }; withdrawable?: string }>,
+      hl.spotBalances(user.walletAddress),
+    ]);
+    const usdc = spot.find((b) => b.coin === "USDC");
+    accountValue = new Decimal(
+      tradingBalance({ mode, perpsValue: state.marginSummary?.accountValue, perpsWithdrawable: state.withdrawable, spotUsdcTotal: usdc?.total, spotUsdcHold: usdc?.hold }).value,
+    );
   } catch {
     accountValue = null;
   }
