@@ -33,6 +33,7 @@ export function fakeHl(overrides: Partial<HlGateway> = {}) {
     updateLeverage: async () => {},
     clearinghouseState: async () => ({ marginSummary: { accountValue: "0" }, assetPositions: [] }),
     openOrders: async () => [],
+    spotBalances: async () => [],
     userFills: async () => [],
     candles: async () => [],
     marketOverview: async () => [],

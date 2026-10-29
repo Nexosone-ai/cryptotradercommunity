@@ -58,6 +58,8 @@ export interface HlGateway {
   builderRewards(builder: string): Promise<{ builderRewards: string; unclaimedRewards: string; claimedRewards: string }>;
   /** Read-only views (Hyperliquid is the source of truth). */
   clearinghouseState(user: string): Promise<unknown>;
+  /** HyperCore spot balances (USDC sits here before it is moved to perps). */
+  spotBalances(user: string): Promise<{ coin: string; total: string; hold: string }[]>;
   openOrders(user: string): Promise<unknown[]>;
   userFills(user: string): Promise<HlFill[]>;
   candles(coin: string, interval: string, startTime: number): Promise<unknown[]>;
@@ -106,6 +108,10 @@ export function createHlGateway(network: HlNetwork): HlGateway {
       return { builderRewards: r.builderRewards, unclaimedRewards: r.unclaimedRewards, claimedRewards: r.claimedRewards };
     },
     clearinghouseState: (user) => info.clearinghouseState({ user: user as `0x${string}` }),
+    async spotBalances(user) {
+      const s = await info.spotClearinghouseState({ user: user as `0x${string}` });
+      return s.balances.map((b) => ({ coin: b.coin, total: b.total, hold: b.hold }));
+    },
     openOrders: (user) => info.frontendOpenOrders({ user: user as `0x${string}` }) as Promise<unknown[]>,
     userFills: async (user) => (await info.userFills({ user: user as `0x${string}` })) as unknown as HlFill[],
     candles: (coin, interval, startTime) =>

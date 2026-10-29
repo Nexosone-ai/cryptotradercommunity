@@ -49,6 +49,14 @@ test("no email/password login; MetaMask sign-in and logout work", async ({ brows
   expect(await page.evaluate(() => (window as unknown as { ethereum: { request(a: object): Promise<string> } }).ethereum.request({ method: "eth_chainId" }))).toBe("0x3e6");
   const me = await (await page.request.get("/api/me")).json();
   expect(me.user.walletAddress).toBe(account.address.toLowerCase());
+  // My page shows where the USDC is (HyperEVM / Spot / Perps) and a Spot ⇄ Perps transfer.
+  await page.goto("/portfolio");
+  const balances = page.getByTestId("usdc-balances");
+  await expect(balances).toContainText("Hyperliquid Spot USDC", { timeout: 30_000 });
+  await expect(balances).toContainText("Hyperliquid Perps (trading)");
+  await expect(balances.getByRole("button", { name: "Transfer" })).toBeDisabled();
+  await balances.getByLabel("Amount (USDC)").fill("5");
+  await expect(balances).toContainText("That's more than is available.");
   await page.getByRole("button", { name: "Sign out" }).click();
   await expect(page.getByTestId("connect-wallet")).toBeVisible();
   expect((await (await page.request.get("/api/me")).json()).user).toBeNull();

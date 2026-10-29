@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useI18n } from "@/components/I18nProvider";
 import { Notice, Stat } from "@/components/ui";
+import { UsdcBalances, type UsdcBalancesView } from "@/components/UsdcBalances";
 import { apiFetch } from "@/lib/client-api";
 import { usd } from "@/lib/format";
 
@@ -14,6 +15,8 @@ interface AccountView {
     withdrawable?: string;
     assetPositions?: { position: { coin: string; unrealizedPnl: string } }[];
   } | null;
+  spot: UsdcBalancesView["spot"];
+  hyperEvm: UsdcBalancesView["hyperEvm"];
   agent: { address: string } | null;
   builder: { approvedMaxTenthsBp: number | null };
 }
@@ -22,11 +25,12 @@ export function HlAccountSummary() {
   const { t, L, intl } = useI18n();
   const [a, setA] = useState<AccountView | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  useEffect(() => {
+  const load = useCallback(() => {
     apiFetch<AccountView>("/api/trading/account")
       .then(setA)
       .catch((e) => setErr(e.message));
   }, []);
+  useEffect(load, [load]);
   if (err) return <Notice tone="down">{L(err)}</Notice>;
   if (!a) return <p className="text-sm text-muted">{t("Loading from Hyperliquid…", "Hyperliquid에서 불러오는 중…")}</p>;
   const ms = a.state?.marginSummary;
@@ -37,6 +41,10 @@ export function HlAccountSummary() {
   return (
     <div className="space-y-3">
       {a.hlError && <Notice tone="down">{L(a.hlError)}</Notice>}
+      <UsdcBalances
+        view={{ perpsValue: ms?.accountValue ?? null, perpsWithdrawable: a.state?.withdrawable ?? null, spot: a.spot, hyperEvm: a.hyperEvm }}
+        onChange={load}
+      />
       <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
         <Stat label={t("Account value", "계정 가치")} value={usd(ms?.accountValue)} />
         <Stat label={t("Withdrawable", "출금 가능")} value={usd(a.state?.withdrawable)} />
