@@ -300,7 +300,7 @@ export default async function BotDetail({ params, searchParams }: PageProps<"/bo
               <div className="space-y-4 text-sm">
                 <ReadinessList items={readiness} />
                 {(sub.status === "ACTIVE" || sub.status === "REQUIRES_RECONSENT") && (
-                  <TradeAmount botId={bot.id} orderUsd={sub.orderUsd} maxOrderUsd={config.risk.maxOrderUsd} />
+                  <TradeAmount botId={bot.id} orderUsd={sub.orderUsd} maxOrderUsd={config.risk.maxOrderUsd} mainnet={cfg.isMainnet} />
                 )}
                 <div>
                   <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Your recent bot activity</h3>

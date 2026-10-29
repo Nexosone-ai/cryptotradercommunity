@@ -35,7 +35,7 @@
 - 개인키(64 hex)·시드 구문·API 키(sk-, AKIA, api_secret 할당)·PEM이 보이면 저장을 거부한다(휴리스틱 — 완전한 탐지는 아님).
 - 업로드 코드는 실행하지 않는다. 봇 실행 엔진(`docs/BOT_ENGINE.md`)은 신호만 받는다: 외부 Webhook 신호(long/short/close) 또는 플랫폼 템플릿(EMA 교차).
 - Webhook 인증: 봇별 토큰(`ctc_` + 24바이트 난수)을 소유자에게 한 번만 보여주고 sha256만 저장, 상수 시간 비교. 잘못된 토큰과 없는 봇은 같은 401. 봇별 분당 30회 제한. 토큰 생성·교체는 감사 로그.
-- 엔진 주문도 `placeOrder` 게이트를 그대로 통과한다(동의 수수료·에이전트·Builder 승인·마켓·주문 한도). 손절은 Hyperliquid 상주 reduce-only 스탑, 실패 시 포지션 즉시 청산. 엔진은 테스트넷 전용.
+- 엔진 주문도 `placeOrder` 게이트를 그대로 통과한다(동의 수수료·에이전트·Builder 승인·마켓·주문 한도). 손절은 Hyperliquid 상주 reduce-only 스탑, 실패 시 포지션 즉시 청산. 메인넷에서는 `BOT_ENGINE_ENABLED`와 `MAINNET_TRADING_ENABLED`가 모두 true여야 동작(2026-10-29 사용자 요청으로 활성화, 외부 보안 감사 전).
 - Cron 엔드포인트(`/api/cron/*`)는 `CRON_SECRET` Bearer가 없으면 거부(미설정 시 503).
 - Phase 2: 격리 워커(컨테이너/Firecracker), egress 제한, CPU·메모리·시간 제한, 서명된 패키지·버전 고정, 시크릿 비접근, kill switch.
 

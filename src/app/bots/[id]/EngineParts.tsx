@@ -43,7 +43,7 @@ export function ReadinessList({ items }: { items: ReadinessItem[] }) {
 }
 
 /** Subscriber's USDC amount per signal. */
-export function TradeAmount({ botId, orderUsd, maxOrderUsd }: { botId: string; orderUsd: number | null; maxOrderUsd: number }) {
+export function TradeAmount({ botId, orderUsd, maxOrderUsd, mainnet }: { botId: string; orderUsd: number | null; maxOrderUsd: number; mainnet: boolean }) {
   const { L } = useI18n();
   const router = useRouter();
   const [value, setValue] = useState(String(orderUsd ?? Math.min(100, maxOrderUsd)));
@@ -68,8 +68,9 @@ export function TradeAmount({ botId, orderUsd, maxOrderUsd }: { botId: string; o
       }}
     >
       <label className="block text-xs text-muted" htmlFor="order-usd">
-        Amount per trade (USDC, max {maxOrderUsd})
+        Amount per trade (USDC, max {maxOrderUsd}){mainnet ? " — real funds" : ""}
       </label>
+      {mainnet && !orderUsd && <p className="text-xs text-warn">Saving an amount lets the bot trade real funds for you on mainnet.</p>}
       <div className="flex gap-2">
         <input id="order-usd" type="number" min={11} max={maxOrderUsd} step={1} value={value} onChange={(e) => setValue(e.target.value)} className="num min-w-0 flex-1" />
         <button type="submit" className={buttonClass("secondary", "sm")} disabled={busy}>

@@ -16,7 +16,7 @@ import { fakeHl } from "../helpers/fake-hl";
 import { makeUser, testDb, validBotInput } from "../helpers/db";
 
 const BUILDER = "0x1111111111111111111111111111111111111111";
-const ENV_KEYS = ["BUILDER_ADDRESS", "AGENT_KEY_ENCRYPTION_KEY", "HL_NETWORK", "BOT_ENGINE_ENABLED"];
+const ENV_KEYS = ["BUILDER_ADDRESS", "AGENT_KEY_ENCRYPTION_KEY", "HL_NETWORK", "BOT_ENGINE_ENABLED", "MAINNET_TRADING_ENABLED"];
 const saved: Record<string, string | undefined> = {};
 
 beforeAll(() => {
@@ -266,5 +266,35 @@ describe("bot execution engine", () => {
     expect(await runTrendTick(db, ex.hl, now)).toEqual([]);
     const [s] = await db.select().from(botSignals).where(eq(botSignals.botId, bot.id));
     expect(s).toMatchObject({ source: "TEMPLATE", action: "LONG", status: "PROCESSED" });
+  });
+
+  it("on mainnet, bots trade only when both MAINNET_TRADING_ENABLED and BOT_ENGINE_ENABLED are on", async () => {
+    const { bot } = await liveBot(db);
+    // Subscriptions and agents are per network, so set them up on mainnet.
+    process.env.HL_NETWORK = "mainnet";
+    try {
+      ex.hl.network = "mainnet";
+      process.env.MAINNET_TRADING_ENABLED = "true"; // needed to grant the agent
+      const { sub } = await subscriber(db, ex, bot.id, 100);
+      const run = async () => {
+        const s = await recordSignal(db, { botId: bot.id, network: "mainnet", source: "WEBHOOK", action: "LONG", coin: "BTC", dedupeKey: `m${seq++}` });
+        return (await executeSignal(db, ex.hl, s!.id))!;
+      };
+      delete process.env.MAINNET_TRADING_ENABLED;
+      expect((await run()).error).toMatch(/Mainnet trading isn.t enabled/);
+      process.env.MAINNET_TRADING_ENABLED = "true";
+      process.env.BOT_ENGINE_ENABLED = "false";
+      expect((await run()).error).toMatch(/turned off/);
+      expect(ex.hl.calls).toHaveLength(0);
+      process.env.BOT_ENGINE_ENABLED = "true";
+      const s = await run();
+      expect(s.summary).toMatchObject({ done: 1 });
+      expect(ex.hl.calls.map((c) => c.orders[0].r)).toEqual([false, true]); // open + stop, accepted by the mainnet gate
+      expect((await db.select().from(botPositions).where(eq(botPositions.subscriptionId, sub.id)))[0].side).toBe("LONG");
+    } finally {
+      process.env.HL_NETWORK = "testnet";
+      process.env.BOT_ENGINE_ENABLED = "true";
+      delete process.env.MAINNET_TRADING_ENABLED;
+    }
   });
 });

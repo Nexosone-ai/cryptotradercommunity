@@ -33,7 +33,7 @@ type Outcome = { status: "DONE" | "SKIPPED" | "FAILED"; reason: string; orderIds
 
 export function engineAvailability(): { enabled: boolean; reason: string | null } {
   const cfg = getConfig();
-  if (cfg.isMainnet) return { enabled: false, reason: "The bot engine runs on testnet only until it has been audited for mainnet." };
+  if (cfg.isMainnet && !cfg.mainnetTradingEnabled) return { enabled: false, reason: "Mainnet trading isn't enabled, so bots place no orders." };
   if (!cfg.botEngineEnabled) return { enabled: false, reason: "The bot engine is turned off (BOT_ENGINE_ENABLED)." };
   if (!cfg.agentKeyConfigured) return { enabled: false, reason: "Agent key encryption isn't configured on the server." };
   return { enabled: true, reason: null };
@@ -153,6 +153,9 @@ async function moveToTarget(db: Db, hl: HlGateway, bot: Bot, config: BotConfig, 
   // placeOrder only needs the identity; roles/session are irrelevant for bot orders.
   const user: SessionUser = { id: u.id, walletAddress: u.walletAddress as `0x${string}`, roles: [], sessionId: "bot-engine", chainId: 0 };
   const ctx = { source: "BOT" as const, botId: bot.id };
+  // On mainnet the gate wants an explicit confirmation per order. For bot orders that is the
+  // subscriber's consent plus the amount per trade they set themselves (checked below before opening).
+  const mainnet = { confirmMainnet: hl.network === "mainnet" };
   const orderIds: string[] = [];
 
   const [tracked] = await db
@@ -175,7 +178,7 @@ async function moveToTarget(db: Db, hl: HlGateway, bot: Bot, config: BotConfig, 
   // 1. Close the bot's opposite position.
   let closedNote = "";
   if (held && tracked) {
-    const close = await placeOrder(db, hl, user, { coin, isBuy: held.side === "SHORT", size: held.size.toString(), orderType: "MARKET", reduceOnly: true }, ctx);
+    const close = await placeOrder(db, hl, user, { coin, isBuy: held.side === "SHORT", size: held.size.toString(), orderType: "MARKET", reduceOnly: true, ...mainnet }, ctx);
     orderIds.push(close.id);
     if (close.status !== "FILLED") return { status: "FAILED", reason: `Close order ${close.status}${close.error ? `: ${close.error}` : ""}`, orderIds };
     if (tracked.stopCloid) await cancelStop(db, hl, user, coin, tracked.stopCloid);
@@ -206,7 +209,7 @@ async function moveToTarget(db: Db, hl: HlGateway, bot: Bot, config: BotConfig, 
     db,
     hl,
     user,
-    { coin, isBuy: target === "LONG", size: orderUsd.div(mid).toString(), orderType: "MARKET" },
+    { coin, isBuy: target === "LONG", size: orderUsd.div(mid).toString(), orderType: "MARKET", ...mainnet },
     ctx,
   );
   orderIds.push(open.id);
@@ -225,7 +228,7 @@ async function moveToTarget(db: Db, hl: HlGateway, bot: Bot, config: BotConfig, 
       db,
       hl,
       user,
-      { coin, isBuy: target === "SHORT", size: open.filledSize, orderType: "STOP_MARKET", triggerPrice: trigger.toString(), reduceOnly: true },
+      { coin, isBuy: target === "SHORT", size: open.filledSize, orderType: "STOP_MARKET", triggerPrice: trigger.toString(), reduceOnly: true, ...mainnet },
       ctx,
     );
     orderIds.push(stop.id);
@@ -235,7 +238,7 @@ async function moveToTarget(db: Db, hl: HlGateway, bot: Bot, config: BotConfig, 
     stopError = message(err);
   }
   if (!stopCloid) {
-    const flatten = await placeOrder(db, hl, user, { coin, isBuy: target === "SHORT", size: open.filledSize, orderType: "MARKET", reduceOnly: true }, ctx).catch(() => null);
+    const flatten = await placeOrder(db, hl, user, { coin, isBuy: target === "SHORT", size: open.filledSize, orderType: "MARKET", reduceOnly: true, ...mainnet }, ctx).catch(() => null);
     if (flatten) orderIds.push(flatten.id);
     await db.insert(riskEvents).values({ userId: user.id, botId: bot.id, kind: "STOP_LOSS_FAILED", severity: "WARN", detail: { coin, stopError, flattened: flatten?.status ?? "ERROR" } });
     return { status: "FAILED", reason: `${closedNote}Stop loss couldn't be placed (${stopError}); the new position was closed for safety.`, orderIds };

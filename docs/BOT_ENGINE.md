@@ -3,7 +3,9 @@
 The engine turns a bot's trading signals into orders on each subscriber's own Hyperliquid account. Code: `src/lib/engine/`.
 
 ## Status
-- **Testnet only.** `BOT_ENGINE_ENABLED=true` turns it on, and it only runs when `HL_NETWORK=testnet`. Mainnet bot orders stay impossible until the engine has been audited (MASTER_PROMPT Phase 3).
+- `BOT_ENGINE_ENABLED=true` turns it on. On mainnet it also needs `MAINNET_TRADING_ENABLED=true`, so either flag alone stops every bot order.
+- **Mainnet enabled on 2026-10-29 at the user's explicit request.** This skipped the testnet trial run and the security review recommended in MASTER_PROMPT Phase 3; the user accepted that risk.
+- Mainnet bot orders pass the gate's per-order mainnet confirmation on the strength of the subscription consent plus the amount per trade the subscriber set. Subscriptions from before the engine have no amount, so they never trade until the subscriber sets one.
 - Works with two execution modes:
   - **External signal webhook** (`WEBHOOK_SIGNAL`), for example TradingView alerts from a Pine Script.
   - **Platform template, Trend Following**: an EMA(9)/EMA(21) crossover on closed candles of the bot's timeframe.
@@ -71,5 +73,5 @@ Owners can't subscribe to their own bot, so testing needs a second wallet.
 |---|---|
 | Owner pauses the bot | No new orders. Open positions keep their stops. |
 | Subscriber unsubscribes | No new orders for them. |
-| `BOT_ENGINE_ENABLED` unset | The whole engine stops. Signals are recorded as IGNORED. |
+| `BOT_ENGINE_ENABLED` or (mainnet) `MAINNET_TRADING_ENABLED` unset | The whole engine stops. Signals are recorded as IGNORED. |
 | Rotate the webhook token | The old alerts stop. |

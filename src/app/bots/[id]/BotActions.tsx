@@ -88,6 +88,12 @@ export function SubscribePanel({
       )}
       {live && !active && (
         <>
+          {w.me.config.network === "mainnet" && (
+            <Notice tone="down">
+              Mainnet: this bot places real orders with real funds in your Hyperliquid account, automatically, on every signal. You can lose
+              money. Unsubscribe at any time to stop new orders.
+            </Notice>
+          )}
           {!reconsent && (
             <div>
               <label className="block text-xs text-muted" htmlFor="subscribe-amount">

@@ -55,10 +55,10 @@ export function getConfig() {
     agentKeyConfigured: /^[0-9a-fA-F]{64}$/.test(process.env.AGENT_KEY_ENCRYPTION_KEY ?? ""),
     databaseConfigured: Boolean(process.env.DATABASE_URL),
     /**
-     * Bot execution engine (lib/engine). Off unless BOT_ENGINE_ENABLED=true, and testnet-only
-     * for now: mainnet bot orders stay impossible until the engine has been audited.
+     * Bot execution engine (lib/engine). Off unless BOT_ENGINE_ENABLED=true. On mainnet it also
+     * needs MAINNET_TRADING_ENABLED=true: either flag alone stops all bot orders.
      */
-    botEngineEnabled: process.env.BOT_ENGINE_ENABLED === "true" && network === "testnet",
+    botEngineEnabled: process.env.BOT_ENGINE_ENABLED === "true" && (network === "testnet" || process.env.MAINNET_TRADING_ENABLED === "true"),
     /** Shared secret Vercel Cron sends as "Authorization: Bearer …" to /api/cron/*. */
     cronSecret: process.env.CRON_SECRET?.trim() || null,
     isProduction: process.env.NODE_ENV === "production",

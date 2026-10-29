@@ -119,7 +119,7 @@ export default async function GuidePage() {
         <Notice tone="info">
           {t(
             <>
-              Bots trade automatically on Hyperliquid testnet: an external
+              Bots trade automatically on Hyperliquid: an external
               signal webhook (for example TradingView alerts) or the Trend
               Following template triggers orders for every subscriber who has
               approved trading permission, the Builder Fee and an amount per
