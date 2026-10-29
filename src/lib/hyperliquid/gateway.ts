@@ -21,7 +21,7 @@ export interface HlOrderWire {
   p: string;
   s: string;
   r: boolean;
-  t: { limit: { tif: "Gtc" | "Ioc" | "Alo" } };
+  t: { limit: { tif: "Gtc" | "Ioc" | "Alo" } } | { trigger: { isMarket: boolean; triggerPx: string; tpsl: "tp" | "sl" } };
   c: `0x${string}`;
 }
 
@@ -64,6 +64,8 @@ export interface HlGateway {
   marketOverview(): Promise<{ name: string; szDecimals: number; maxLeverage: number; markPx: string; funding: string; openInterest: string; dayNtlVlm: string; prevDayPx: string }[]>;
   placeOrders(agentKey: `0x${string}`, orders: HlOrderWire[], builder?: { b: `0x${string}`; f: number }): Promise<HlOrderStatus[]>;
   cancelByCloid(agentKey: `0x${string}`, asset: number, cloid: `0x${string}`): Promise<void>;
+  /** Sets cross leverage for an asset (agent-signed). */
+  updateLeverage(agentKey: `0x${string}`, asset: number, leverage: number): Promise<void>;
 }
 
 const META_TTL_MS = 60_000;
@@ -130,6 +132,9 @@ export function createHlGateway(network: HlNetwork): HlGateway {
     },
     async cancelByCloid(agentKey, asset, cloid) {
       await exchangeFor(agentKey).cancelByCloid({ cancels: [{ asset, cloid }] });
+    },
+    async updateLeverage(agentKey, asset, leverage) {
+      await exchangeFor(agentKey).updateLeverage({ asset, isCross: true, leverage });
     },
   };
 }

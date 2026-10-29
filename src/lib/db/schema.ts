@@ -98,6 +98,8 @@ export const bots = pgTable("bots", {
   config: jsonb("config").notNull(),
   riskLevel: text("risk_level").notNull(),
   liveSince: timestamp("live_since", { withTimezone: true }),
+  /** sha256 of the owner's signal-webhook token (WEBHOOK_SIGNAL bots). The token itself is shown once and never stored. */
+  webhookSecretHash: text("webhook_secret_hash"),
   createdAt: createdAt(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
@@ -151,6 +153,8 @@ export const botSubscriptions = pgTable("bot_subscriptions", {
   acceptedFeeTenthsBp: integer("accepted_fee_tenths_bp").notNull(),
   acceptedConfigVersion: integer("accepted_config_version").notNull(),
   pendingFeeTenthsBp: integer("pending_fee_tenths_bp"),
+  /** USDC notional the engine opens per signal for this subscriber (capped by the bot's max order). Null = not set, no bot orders. */
+  orderUsd: integer("order_usd"),
   consentedAt: timestamp("consented_at", { withTimezone: true }).notNull(),
   stoppedAt: timestamp("stopped_at", { withTimezone: true }),
   createdAt: createdAt(),
@@ -212,6 +216,11 @@ export const orders = pgTable("orders", {
   price: text("price").notNull(),
   size: text("size").notNull(),
   reduceOnly: boolean("reduce_only").notNull().default(false),
+  /** STOP_MARKET orders: the trigger price. */
+  triggerPrice: text("trigger_price"),
+  /** Filled size and average price as reported by Hyperliquid in the order response. */
+  filledSize: text("filled_size"),
+  avgPrice: text("avg_price"),
   builderFeeTenthsBp: integer("builder_fee_tenths_bp").notNull(),
   /** PENDING | RESTING | FILLED | CANCELED | REJECTED | ERROR */
   status: text("status").notNull(),
@@ -264,6 +273,67 @@ export const botPerformanceSnapshots = pgTable("bot_performance_snapshots", {
   methodology: text("methodology").notNull(),
   computedAt: createdAt(),
 }, (t) => [index("bot_perf_bot_idx").on(t.botId, t.period)]);
+
+// ── Bot execution engine (docs/BOT_ENGINE.md) ─────────────────────────────
+
+/** A trading signal for a bot: from the owner's webhook or a platform template. Deduplicated per bot. */
+export const botSignals = pgTable("bot_signals", {
+  id: id(),
+  botId: text("bot_id").notNull().references(() => bots.id),
+  network: networkEnum("network").notNull(),
+  /** WEBHOOK | TEMPLATE */
+  source: text("source").notNull(),
+  /** Target position: LONG | SHORT | FLAT */
+  action: text("action").notNull(),
+  coin: text("coin").notNull(),
+  dedupeKey: text("dedupe_key").notNull(),
+  payload: jsonb("payload"),
+  /** RECEIVED | PROCESSED | IGNORED | FAILED */
+  status: text("status").notNull(),
+  summary: jsonb("summary"),
+  error: text("error"),
+  createdAt: createdAt(),
+  processedAt: timestamp("processed_at", { withTimezone: true }),
+}, (t) => [
+  uniqueIndex("bot_signals_dedupe_uq").on(t.botId, t.network, t.dedupeKey),
+  index("bot_signals_bot_idx").on(t.botId, t.createdAt),
+]);
+
+/** What the engine did for one subscriber on one signal (at most once). */
+export const botExecutions = pgTable("bot_executions", {
+  id: id(),
+  signalId: text("signal_id").notNull().references(() => botSignals.id),
+  subscriptionId: text("subscription_id").notNull().references(() => botSubscriptions.id),
+  userId: text("user_id").notNull().references(() => users.id),
+  /** RUNNING | DONE | SKIPPED | FAILED */
+  status: text("status").notNull(),
+  reason: text("reason"),
+  orderIds: jsonb("order_ids"),
+  createdAt: createdAt(),
+}, (t) => [
+  uniqueIndex("bot_executions_signal_sub_uq").on(t.signalId, t.subscriptionId),
+  index("bot_executions_sub_idx").on(t.subscriptionId, t.createdAt),
+]);
+
+/** The position the engine opened for a subscription; it only ever closes what it opened. */
+export const botPositions = pgTable("bot_positions", {
+  id: id(),
+  subscriptionId: text("subscription_id").notNull().references(() => botSubscriptions.id),
+  coin: text("coin").notNull(),
+  /** LONG | SHORT */
+  side: text("side").notNull(),
+  size: text("size").notNull(),
+  entryPrice: text("entry_price").notNull(),
+  stopCloid: text("stop_cloid"),
+  openedAt: timestamp("opened_at", { withTimezone: true }).notNull(),
+}, (t) => [uniqueIndex("bot_positions_sub_coin_uq").on(t.subscriptionId, t.coin)]);
+
+/** Short-lived mutual exclusion (e.g. one signal per bot at a time). A row is held until released or expired. */
+export const engineLocks = pgTable("engine_locks", {
+  key: text("key").primaryKey(),
+  holder: text("holder").notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+});
 
 // ── Partners & referrals ───────────────────────────────────────────────────
 

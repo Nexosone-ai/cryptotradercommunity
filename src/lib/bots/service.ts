@@ -6,6 +6,7 @@ import { grantRole } from "../auth/service";
 import { getConfig } from "../config";
 import type { Db } from "../db/client";
 import { botReviewLogs, botSources, botSubscriptions, bots, botVersions } from "../db/schema";
+import { validateOrderUsd } from "../engine/manage";
 import { badRequest, conflict, forbidden, notFound } from "../http";
 import { assessBotRisk } from "./risk";
 import { botConfigSchema, type BotConfig, type StoredBotConfig } from "./schema";
@@ -310,7 +311,7 @@ export async function subscribe(
   db: Db,
   user: SessionUser,
   botId: string,
-  input: { acceptedFeeTenthsBp: number; acceptRisk: boolean },
+  input: { acceptedFeeTenthsBp: number; acceptRisk: boolean; orderUsd?: number },
 ) {
   if (input.acceptRisk !== true) throw badRequest("RISK_CONSENT_REQUIRED", bi("You must accept the risk disclosure.", "위험 고지에 동의해야 합니다."));
   const [bot] = await db.select().from(bots).where(eq(bots.id, botId)).limit(1);
@@ -319,6 +320,8 @@ export async function subscribe(
   if (input.acceptedFeeTenthsBp !== bot.feeTenthsBp) {
     throw conflict("FEE_CHANGED", bi("The bot's fee rate has changed. Please review the latest fee and consent again.", "봇 수수료율이 변경되었습니다. 최신 수수료를 확인 후 다시 동의해 주세요."));
   }
+  if (input.orderUsd !== undefined) validateOrderUsd(input.orderUsd, bot.config as BotConfig);
+  const orderUsd = input.orderUsd !== undefined ? { orderUsd: input.orderUsd } : {};
   const network = getConfig().network;
   const now = new Date();
   const [row] = await db
@@ -331,6 +334,7 @@ export async function subscribe(
       acceptedFeeTenthsBp: bot.feeTenthsBp,
       acceptedConfigVersion: bot.configVersion,
       consentedAt: now,
+      ...orderUsd,
     })
     .onConflictDoUpdate({
       target: [botSubscriptions.botId, botSubscriptions.userId, botSubscriptions.network],
@@ -341,6 +345,7 @@ export async function subscribe(
         pendingFeeTenthsBp: null,
         consentedAt: now,
         stoppedAt: null,
+        ...orderUsd,
       },
     })
     .returning();

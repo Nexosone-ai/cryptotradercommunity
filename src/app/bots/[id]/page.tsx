@@ -16,7 +16,12 @@ import { dateTime, feeLabel, STATUS_LABELS, usd } from "@/lib/format";
 import { botFills, computeMetrics } from "@/lib/performance/metrics";
 import { getI18n } from "@/lib/i18n-server";
 import { and, eq } from "drizzle-orm";
+import { getHlGateway } from "@/lib/hyperliquid/gateway";
+import { engineAvailability, recentExecutions, recentSignals } from "@/lib/engine/execute";
+import { subscriberReadiness } from "@/lib/engine/readiness";
+import { TREND_TEMPLATE, usesTrendTemplate } from "@/lib/engine/trend";
 import { OwnerActions, PublishBanner, SubscribePanel } from "./BotActions";
+import { ReadinessList, TradeAmount, WebhookSetup } from "./EngineParts";
 import { PnlChart } from "./PnlChart";
 
 export const dynamic = "force-dynamic";
@@ -59,6 +64,13 @@ export default async function BotDetail({ params, searchParams }: PageProps<"/bo
         .limit(1)
     : [];
   const versions = isOwner || isAdmin ? await listBotVersions(db, bot.id) : [];
+  const hl = getHlGateway(cfg.network);
+  const readiness = viewer && sub && !isOwner ? await subscriberReadiness(db, hl, viewer, bot, sub) : null;
+  const executions = sub && !isOwner ? await recentExecutions(db, sub.id) : [];
+  const signals = isOwner || isAdmin ? await recentSignals(db, bot.id, cfg.network) : [];
+  const engine = engineAvailability();
+  const webhookBot = config.executionMode === "WEBHOOK_SIGNAL";
+  const trendBot = usesTrendTemplate(config);
   const source = await getBotSource(db, bot, viewer);
   const curve = fills
     .slice()
@@ -276,10 +288,103 @@ export default async function BotDetail({ params, searchParams }: PageProps<"/bo
                 botId={bot.id}
                 live={bot.status === "LIVE"}
                 feeTenthsBp={bot.feeTenthsBp}
+                maxOrderUsd={config.risk.maxOrderUsd}
                 subscription={sub ? { status: sub.status, acceptedFeeTenthsBp: sub.acceptedFeeTenthsBp, pendingFeeTenthsBp: sub.pendingFeeTenthsBp } : null}
               />
             )}
           </Card>
+
+          {readiness && sub && (
+            <Card>
+              <h2 className="mb-3 font-semibold">Bot trading for you</h2>
+              <div className="space-y-4 text-sm">
+                <ReadinessList items={readiness} />
+                {(sub.status === "ACTIVE" || sub.status === "REQUIRES_RECONSENT") && (
+                  <TradeAmount botId={bot.id} orderUsd={sub.orderUsd} maxOrderUsd={config.risk.maxOrderUsd} />
+                )}
+                <div>
+                  <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Your recent bot activity</h3>
+                  {executions.length === 0 ? (
+                    <p className="text-muted">Nothing yet. Activity appears here when the bot sends a signal.</p>
+                  ) : (
+                    <ul className="space-y-2" data-testid="bot-executions">
+                      {executions.map(({ e, action, coin }) => (
+                        <li key={e.id} className="text-xs">
+                          <span className="num text-muted">{dateTime(e.createdAt)}</span>{" "}
+                          <Badge tone={e.status === "DONE" ? "up" : e.status === "FAILED" ? "down" : "neutral"}>{e.status}</Badge>{" "}
+                          <b>
+                            {action} {coin}
+                          </b>
+                          {e.reason && <span className="block text-muted">{e.reason}</span>}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            </Card>
+          )}
+
+          {(isOwner || isAdmin) && (
+            <Card>
+              <h2 className="mb-3 font-semibold">Trading signals</h2>
+              <div className="space-y-4 text-sm">
+                {!engine.enabled && <Notice tone="warn">{engine.reason}</Notice>}
+                {webhookBot ? (
+                  isOwner ? (
+                    <WebhookSetup
+                      botId={bot.id}
+                      signalUrl={new URL(`/api/bots/${bot.id}/signal`, cfg.appUrl).toString()}
+                      hasToken={Boolean(bot.webhookSecretHash)}
+                      coin={config.markets[0].replace(/-PERP$/, "")}
+                    />
+                  ) : (
+                    <p className="text-muted">External signal webhook. Token set: {bot.webhookSecretHash ? "yes" : "no"}.</p>
+                  )
+                ) : trendBot ? (
+                  <p className="text-muted">
+                    Platform Trend Following template: EMA({TREND_TEMPLATE.fast}) / EMA({TREND_TEMPLATE.slow}) crossover on closed {config.timeframe} candles of{" "}
+                    {config.markets.join(", ")}, checked every minute. A cross up goes long, a cross down goes short
+                    {config.direction === "LONG" ? " (this long-only bot closes instead)" : config.direction === "SHORT" ? " (this short-only bot only shorts)" : ""}.
+                  </p>
+                ) : (
+                  <Notice tone="warn">
+                    This bot&apos;s execution mode ({L(EXECUTION_LABELS[config.executionMode])}, {STRATEGY_LABELS[config.strategyType]}) isn&apos;t automated yet, so it
+                    places no orders. To trade now, edit the bot and choose External signal webhook (e.g. TradingView alerts from your Pine Script), or the
+                    Trend Following template. Changing it sends the bot back to review.
+                  </Notice>
+                )}
+                <div>
+                  <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Recent signals</h3>
+                  {signals.length === 0 ? (
+                    <p className="text-muted">No signals yet.</p>
+                  ) : (
+                    <ul className="space-y-2" data-testid="bot-signals">
+                      {signals.map((s) => {
+                        const sum = s.summary as { subscribers?: number; done?: number; skipped?: number; failed?: number } | null;
+                        return (
+                          <li key={s.id} className="text-xs">
+                            <span className="num text-muted">{dateTime(s.createdAt)}</span>{" "}
+                            <Badge tone={s.status === "PROCESSED" ? "up" : s.status === "FAILED" ? "down" : "neutral"}>{s.status}</Badge>{" "}
+                            <b>
+                              {s.action} {s.coin}
+                            </b>{" "}
+                            <span className="text-muted">({s.source.toLowerCase()})</span>
+                            {sum && (
+                              <span className="block text-muted">
+                                {sum.subscribers} subscribers · {sum.done} traded · {sum.skipped} skipped · {sum.failed} failed
+                              </span>
+                            )}
+                            {s.error && <span className="block text-warn">{s.error}</span>}
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
+              </div>
+            </Card>
+          )}
 
           <Card>
             <h2 className="mb-3 font-semibold">{t("Fee breakdown", "수수료 구성")}</h2>

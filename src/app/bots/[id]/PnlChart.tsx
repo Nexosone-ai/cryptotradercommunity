@@ -14,6 +14,8 @@ export function PnlChart({ data }: { data: { time: number; value: number }[] }) 
       grid: { vertLines: { color: "#1a2028" }, horzLines: { color: "#1a2028" } },
       rightPriceScale: { borderColor: "#222a33" },
       timeScale: { borderColor: "#222a33" },
+      // The site is English-only; without this the axis follows the computer's language (e.g. "26일").
+      localization: { locale: "en-US" },
       autoSize: true,
     });
     const series = chart.addSeries(AreaSeries, {

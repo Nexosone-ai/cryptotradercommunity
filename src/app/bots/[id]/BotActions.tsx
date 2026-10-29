@@ -33,17 +33,20 @@ export function SubscribePanel({
   botId,
   live,
   feeTenthsBp,
+  maxOrderUsd,
   subscription,
 }: {
   botId: string;
   live: boolean;
   feeTenthsBp: number;
+  maxOrderUsd: number;
   subscription: { status: string; acceptedFeeTenthsBp: number; pendingFeeTenthsBp: number | null } | null;
 }) {
   const w = useWallet();
   const { t, L } = useI18n();
   const { busy, error, run } = useAction();
   const [accept, setAccept] = useState(false);
+  const [amount, setAmount] = useState(String(Math.min(100, maxOrderUsd)));
 
   if (!w.me?.user) {
     return (
@@ -83,14 +86,26 @@ export function SubscribePanel({
           )}
         </Notice>
       )}
-      <Notice tone="warn">
-        {t(
-          "The automated execution worker ships in Phase 2. Subscribing now records your consent and permission status; actual bot orders only happen after the worker is deployed.",
-          "자동매매 실행 워커는 Phase 2에서 배포됩니다. 지금 구독하면 동의·권한 상태가 기록되며, 실제 봇 주문은 워커 배포 후에만 발생합니다.",
-        )}
-      </Notice>
       {live && !active && (
         <>
+          {!reconsent && (
+            <div>
+              <label className="block text-xs text-muted" htmlFor="subscribe-amount">
+                Amount per trade (USDC, max {maxOrderUsd})
+              </label>
+              <input
+                id="subscribe-amount"
+                type="number"
+                min={11}
+                max={maxOrderUsd}
+                step={1}
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                className="num mt-1 w-full"
+              />
+              <p className="mt-1 text-xs text-faint">The bot opens a position of this size on each entry signal, with a stop loss.</p>
+            </div>
+          )}
           <label className="flex items-start gap-2 text-text">
             <input type="checkbox" checked={accept} onChange={(e) => setAccept(e.target.checked)} className="mt-1" />
             <span>
@@ -109,7 +124,9 @@ export function SubscribePanel({
           <button
             className={buttonClass("primary") + " w-full"}
             disabled={!accept || busy}
-            onClick={() => run(`/api/bots/${botId}/subscribe`, { acceptedFeeTenthsBp: feeTenthsBp, acceptRisk: true })}
+            onClick={() =>
+              run(`/api/bots/${botId}/subscribe`, { acceptedFeeTenthsBp: feeTenthsBp, acceptRisk: true, ...(reconsent ? {} : { orderUsd: Number(amount) }) })
+            }
           >
             {reconsent ? t("Re-consent to changes", "변경 내용에 재동의") : t("Subscribe", "구독하기")}
           </button>

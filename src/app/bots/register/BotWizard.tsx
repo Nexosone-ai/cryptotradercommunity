@@ -318,7 +318,7 @@ export function BotWizard({ ownerAddress, platformMaxFeeTenthsBp, editId, initia
               </select>
               <p className="mt-1 text-xs text-faint">
                 {t(
-                  "Uploaded code is never run on production servers. Packages and webhooks will be enabled in Phase 2 after sandbox isolation and a security review.",
+                  "Uploaded code is never run on the platform. External signal webhook: your TradingView alerts (or any HTTPS client) send long/short/close signals and the platform places subscribers' orders. Platform template: Trend Following uses an EMA 9/21 crossover. Verified packages aren't available yet.",
                   "업로드한 임의 코드는 프로덕션 서버에서 실행하지 않습니다. 패키지·Webhook은 샌드박스 격리와 보안 심사 후 Phase 2에서 활성화됩니다.",
                 )}
               </p>

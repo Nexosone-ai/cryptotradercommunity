@@ -30,6 +30,7 @@ export function fakeHl(overrides: Partial<HlGateway> = {}) {
       return orders.map(() => ({ resting: { oid: nextOid++ } }));
     },
     cancelByCloid: async () => {},
+    updateLeverage: async () => {},
     clearinghouseState: async () => ({ marginSummary: { accountValue: "0" }, assetPositions: [] }),
     openOrders: async () => [],
     userFills: async () => [],

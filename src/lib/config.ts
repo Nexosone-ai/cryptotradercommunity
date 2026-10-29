@@ -54,6 +54,13 @@ export function getConfig() {
     maxManualOrderUsd: intEnv("MAX_MANUAL_ORDER_USD", 1000, 1, 10_000_000),
     agentKeyConfigured: /^[0-9a-fA-F]{64}$/.test(process.env.AGENT_KEY_ENCRYPTION_KEY ?? ""),
     databaseConfigured: Boolean(process.env.DATABASE_URL),
+    /**
+     * Bot execution engine (lib/engine). Off unless BOT_ENGINE_ENABLED=true, and testnet-only
+     * for now: mainnet bot orders stay impossible until the engine has been audited.
+     */
+    botEngineEnabled: process.env.BOT_ENGINE_ENABLED === "true" && network === "testnet",
+    /** Shared secret Vercel Cron sends as "Authorization: Bearer …" to /api/cron/*. */
+    cronSecret: process.env.CRON_SECRET?.trim() || null,
     isProduction: process.env.NODE_ENV === "production",
   };
 }

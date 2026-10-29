@@ -402,3 +402,70 @@ test("the site is English-only: no language switch, English UI and API messages"
   expect(missing.status()).toBe(404);
   expect((await missing.json()).error.message).not.toMatch(/[가-힣]/);
 });
+
+test("bot engine: owner creates a webhook token, signals are accepted and shown, subscribers see what is missing", async ({ browser, baseURL }) => {
+  const { generatePrivateKey } = await import("viem/accounts");
+  const owner = await walletPage(browser, generatePrivateKey());
+  await owner.page.goto("/");
+  await signInViaUi(owner.page);
+  const ro = api(owner.page.request, baseURL!);
+  const slug = `hook-${Date.now()}`;
+  const created = await ro.post("/api/bots", { ...botInput(slug), executionMode: "WEBHOOK_SIGNAL" });
+  expect(created.status()).toBe(201);
+  const { bot } = await created.json();
+  expect((await ro.post(`/api/bots/${bot.id}/submit`)).status()).toBe(200);
+  const admin = await walletPage(browser, E2E_KEYS.admin);
+  await admin.page.goto("/");
+  await signInViaUi(admin.page);
+  expect((await api(admin.page.request, baseURL!).post(`/api/admin/bots/${bot.id}/approve`)).status()).toBe(200);
+  await admin.context.close();
+  expect((await ro.post(`/api/bots/${bot.id}/start`)).status()).toBe(200);
+
+  // Owner creates the token on the bot page; it is shown once.
+  await owner.page.goto(`/bots/${slug}`);
+  const setup = owner.page.getByTestId("webhook-setup");
+  await expect(setup).toContainText(`/api/bots/${bot.id}/signal`);
+  await setup.getByRole("button", { name: "Create token" }).click();
+  const token = (await setup.getByTestId("webhook-token").textContent())!.trim();
+  expect(token).toMatch(/^ctc_/);
+
+  // The webhook needs the right token; TradingView-style tickers are accepted; repeats are deduplicated.
+  const anon = await browser.newContext();
+  const hook = (data: unknown) => anon.request.post(`/api/bots/${bot.id}/signal`, { data });
+  expect((await hook({ token: "ctc_wrong_token_wrong_token_wrong", action: "long", coin: "BTC" })).status()).toBe(401);
+  expect((await hook({ token, action: "hold", coin: "BTC" })).status()).toBe(400);
+  const ok = await hook({ token, action: "long", coin: "BTCUSDT.P", id: "e2e-1" });
+  expect(ok.status()).toBe(202);
+  expect(await ok.json()).toMatchObject({ action: "LONG", coin: "BTC", engine: "on" });
+  expect(await (await hook({ token, action: "long", coin: "BTC", id: "e2e-1" })).json()).toMatchObject({ duplicate: true });
+
+  // The owner sees the processed signal (no subscribers yet).
+  await expect(async () => {
+    await owner.page.reload();
+    await expect(owner.page.getByTestId("bot-signals")).toContainText("PROCESSED");
+  }).toPass({ timeout: 20_000 });
+  await expect(owner.page.getByTestId("bot-signals")).toContainText("0 subscribers");
+
+  // A subscriber sets an amount and sees what still blocks trading.
+  const sub = await walletPage(browser, generatePrivateKey());
+  await sub.page.goto("/");
+  await signInViaUi(sub.page);
+  await sub.page.goto(`/bots/${slug}`);
+  await sub.page.getByLabel("Amount per trade (USDC, max 100)").fill("50");
+  await sub.page.getByRole("checkbox").first().check();
+  await sub.page.getByRole("button", { name: "Subscribe" }).click();
+  const readiness = sub.page.getByTestId("bot-readiness");
+  await expect(readiness).toContainText("Not trading for you yet");
+  await expect(readiness).toContainText("Amount per trade: 50 USDC");
+  await expect(readiness).toContainText("Trading permission (agent wallet) approved");
+  await expect(readiness.getByRole("link", { name: "Open" }).first()).toHaveAttribute("href", "/trade");
+
+  // Cron endpoints need the shared secret.
+  expect((await anon.request.get("/api/cron/engine")).status()).toBe(401);
+  const cron = await anon.request.get("/api/cron/engine", { headers: { authorization: "Bearer e2e-cron-secret" } });
+  expect(cron.status()).toBe(200);
+  expect(await cron.json()).toMatchObject({ engine: "on" });
+  await anon.close();
+  await sub.context.close();
+  await owner.context.close();
+});

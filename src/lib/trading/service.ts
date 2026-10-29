@@ -22,6 +22,8 @@ import { bi } from "../i18n";
 
 const AGENT_VALIDITY_DAYS = 30;
 const MARKET_SLIPPAGE = new Decimal("0.05");
+/** Worst fill price allowed once a stop-market order triggers. */
+const STOP_SLIPPAGE = new Decimal("0.1");
 
 export async function ensureTradingAccount(
   db: Db,
@@ -174,8 +176,10 @@ export interface OrderRequest {
   coin: string;
   isBuy: boolean;
   size: string;
-  orderType: "MARKET" | "LIMIT";
+  /** STOP_MARKET is a reduce-only stop loss that rests on Hyperliquid until triggerPrice. */
+  orderType: "MARKET" | "LIMIT" | "STOP_MARKET";
   price?: string;
+  triggerPrice?: string;
   tif?: "Gtc" | "Ioc" | "Alo";
   reduceOnly?: boolean;
   /** Required on mainnet: the user re-confirmed live trading in the UI. */
@@ -267,10 +271,21 @@ export async function placeOrder(db: Db, hl: HlGateway, user: SessionUser, req: 
   if (!mid) throw new ApiError(503, "NO_PRICE", bi("Couldn't get the current price.", "현재가를 확인할 수 없습니다."));
 
   let price: Decimal;
-  let tif: "Gtc" | "Ioc" | "Alo";
+  let tif: "Gtc" | "Ioc" | "Alo" = "Gtc";
+  let trigger: Decimal | null = null;
   if (req.orderType === "MARKET") {
     price = req.isBuy ? mid.mul(MARKET_SLIPPAGE.plus(1)) : mid.mul(new Decimal(1).minus(MARKET_SLIPPAGE));
     tif = "Ioc";
+  } else if (req.orderType === "STOP_MARKET") {
+    // Stops only ever close a position.
+    if (!req.reduceOnly) throw badRequest("STOP_MUST_REDUCE", bi("Stop orders must be reduce-only.", "스탑 주문은 포지션 축소 전용이어야 합니다."));
+    try {
+      trigger = new Decimal(req.triggerPrice ?? "");
+    } catch {
+      trigger = null;
+    }
+    if (!trigger || !trigger.isFinite() || trigger.lte(0)) throw badRequest("INVALID_TRIGGER", bi("The stop trigger price is invalid.", "스탑 트리거 가격이 올바르지 않습니다."));
+    price = req.isBuy ? trigger.mul(STOP_SLIPPAGE.plus(1)) : trigger.mul(new Decimal(1).minus(STOP_SLIPPAGE));
   } else {
     if (!req.price) throw badRequest("PRICE_REQUIRED", bi("Limit orders require a price.", "지정가 주문에는 가격이 필요합니다."));
     price = new Decimal(req.price);
@@ -282,12 +297,14 @@ export async function placeOrder(db: Db, hl: HlGateway, user: SessionUser, req: 
     tif = req.tif ?? "Gtc";
   }
   const px = formatPerpPrice(price, asset.szDecimals);
+  const triggerPx = trigger ? formatPerpPrice(trigger, asset.szDecimals) : null;
   const sz = formatPerpSize(size, asset.szDecimals);
   const notional = new Decimal(sz).mul(mid);
   if (notional.gt(maxOrderUsd) && !req.reduceOnly) {
     await reject(db, user, ctx.botId, "ORDER_TOO_LARGE", bi(`The order amount exceeds the per-order limit (${maxOrderUsd.toFixed()} USDC).`, `주문 금액이 1회 한도(${maxOrderUsd.toFixed()} USDC)를 초과합니다.`), 400);
   }
-  if (notional.lt(10)) throw badRequest("ORDER_TOO_SMALL", bi("The order is below Hyperliquid's minimum order amount (10 USDC).", "Hyperliquid 최소 주문 금액(10 USDC) 미만입니다."));
+  // Closing orders may be smaller than the minimum (e.g. the rest of a position).
+  if (notional.lt(10) && !req.reduceOnly) throw badRequest("ORDER_TOO_SMALL", bi("The order is below Hyperliquid's minimum order amount (10 USDC).", "Hyperliquid 최소 주문 금액(10 USDC) 미만입니다."));
 
   // 5. Record intent first (unique cloid), then send.
   const cloid = newCloid();
@@ -307,6 +324,7 @@ export async function placeOrder(db: Db, hl: HlGateway, user: SessionUser, req: 
       price: px,
       size: sz,
       reduceOnly: Boolean(req.reduceOnly),
+      triggerPrice: triggerPx,
       builderFeeTenthsBp: feeTenthsBp,
       status: "PENDING",
     })
@@ -316,7 +334,17 @@ export async function placeOrder(db: Db, hl: HlGateway, user: SessionUser, req: 
     const agentKey = decryptAgentKey(agent!.encryptedKey, agent!.agentAddress);
     const [status] = await hl.placeOrders(
       agentKey,
-      [{ a: asset.index, b: req.isBuy, p: px, s: sz, r: Boolean(req.reduceOnly), t: { limit: { tif } }, c: cloid }],
+      [
+        {
+          a: asset.index,
+          b: req.isBuy,
+          p: px,
+          s: sz,
+          r: Boolean(req.reduceOnly),
+          t: triggerPx ? { trigger: { isMarket: true, triggerPx, tpsl: "sl" } } : { limit: { tif } },
+          c: cloid,
+        },
+      ],
       feeTenthsBp > 0 ? { b: cfg.builderAddress!.toLowerCase() as `0x${string}`, f: feeTenthsBp } : undefined,
     );
     const update = interpretStatus(status);
@@ -337,7 +365,10 @@ export async function placeOrder(db: Db, hl: HlGateway, user: SessionUser, req: 
 function interpretStatus(status: unknown): Partial<typeof orders.$inferInsert> {
   if (status && typeof status === "object") {
     if ("resting" in status) return { status: "RESTING", hlOrderId: (status as { resting: { oid: number } }).resting.oid };
-    if ("filled" in status) return { status: "FILLED", hlOrderId: (status as { filled: { oid: number } }).filled.oid };
+    if ("filled" in status) {
+      const f = (status as { filled: { oid: number; totalSz?: string; avgPx?: string } }).filled;
+      return { status: "FILLED", hlOrderId: f.oid, filledSize: f.totalSz ?? null, avgPrice: f.avgPx ?? null };
+    }
     if ("error" in status) return { status: "REJECTED", error: String((status as { error: string }).error) };
   }
   return { status: "ERROR", error: `Unexpected status: ${JSON.stringify(status)}` };

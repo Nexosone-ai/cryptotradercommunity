@@ -34,6 +34,8 @@ export function CandleChart({ coin }: { coin: string }) {
       grid: { vertLines: { color: "#161c23" }, horzLines: { color: "#161c23" } },
       rightPriceScale: { borderColor: "#222a33" },
       timeScale: { borderColor: "#222a33", timeVisible: true },
+      // The site is English-only; without this the axis follows the computer's language (e.g. "26일").
+      localization: { locale: "en-US" },
     });
     series.current = chart.current.addSeries(CandlestickSeries, {
       upColor: "#22c55e",

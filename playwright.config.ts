@@ -29,6 +29,9 @@ export default defineConfig({
       ADMIN_WALLET_ADDRESS: E2E_ADMIN_ADDRESS,
       BUILDER_ADDRESS: "",
       NEXT_DIST_DIR: ".next-e2e",
+      // Bot engine on (testnet); the specs never give a subscriber trading permission, so no real orders are sent.
+      BOT_ENGINE_ENABLED: "true",
+      CRON_SECRET: "e2e-cron-secret",
       // Placeholder company account for the partner billing flow (test only).
       COMPANY_NAME: "E2E Test Co",
       COMPANY_BANK_NAME: "E2E Bank",

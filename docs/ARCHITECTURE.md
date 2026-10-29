@@ -30,6 +30,7 @@ Settlement Worker (상시 실행, Vercel 외부)        Bot Runner (Phase 2, 격
 | `src/lib/fees/*` | 분배 엔진(bigint), 단위 변환, 예상 수수료 |
 | `src/lib/ledger/service.ts` | 정책 버전, 확정·배분 분개, 대사, claim, 지급 |
 | `src/lib/referral/service.ts` | 파트너 코드, 2단계 관계 고정, 수혜자 결정 |
+| `src/lib/engine/*` | 봇 실행 엔진: 신호(webhook·템플릿) → 구독자별 주문·손절·일일 손실 한도 (`docs/BOT_ENGINE.md`) |
 | `src/lib/referral/admin.ts` | 관리자 전용 파트너 지정·정지 (공개 가입 없음) |
 | `src/lib/trading/*` | agent 키 암호화, agent 승인 확인, Builder 승인 확인, **주문 게이트** |
 | `src/lib/settlement/ingest.ts` | 체결 수집 → fills/fee_events (멱등) |

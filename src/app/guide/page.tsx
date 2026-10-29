@@ -119,10 +119,12 @@ export default async function GuidePage() {
         <Notice tone="info">
           {t(
             <>
-              The automated trading worker ships in Phase 2. Until then,
-              registered bots don&rsquo;t place real orders, and every
-              bot&rsquo;s performance shows as &lsquo;Not enough verified
-              data&rsquo;.
+              Bots trade automatically on Hyperliquid testnet: an external
+              signal webhook (for example TradingView alerts) or the Trend
+              Following template triggers orders for every subscriber who has
+              approved trading permission, the Builder Fee and an amount per
+              trade. Performance shows &lsquo;Not enough verified data&rsquo;
+              until a bot has enough real fills.
             </>,
             <>
               자동매매 실행 워커는 Phase 2에서 배포됩니다. 그 전에는 등록된 봇이
@@ -542,8 +544,8 @@ export default async function GuidePage() {
                   runs attached code; it&rsquo;s there for review and
                   transparency. A Pine <code>indicator()</code> only produces
                   signals and never places orders, so connecting it to automated
-                  trading requires a TradingView alert → platform webhook (Phase
-                  2).
+                  trading takes a TradingView alert sent to the bot&rsquo;s signal
+                  webhook (execution mode: External signal webhook).
                 </>,
                 <>
                   개인키·시드·API 키처럼 보이는 내용이 있으면 저장이 거부됩니다.
@@ -631,7 +633,7 @@ export default async function GuidePage() {
                   "플랫폼 전략 템플릿 · 검증된 전략 패키지 · 외부 신호 Webhook",
                 ),
                 t(
-                  "Packages and webhooks get a security review warning and are enabled in Phase 2",
+                  "Webhook: TradingView/HTTPS signals (long, short, close). Template: Trend Following EMA 9/21. Packages aren't available yet",
                   "패키지·Webhook은 보안 심사 경고가 붙으며 Phase 2에 활성화",
                 ),
               ],

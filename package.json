@@ -14,6 +14,7 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx scripts/migrate.ts",
     "worker:settlement": "tsx --conditions=react-server workers/settlement.ts",
+    "worker:bots": "tsx --conditions=react-server workers/bots.ts",
     "check:hl": "tsx scripts/check-hyperliquid.ts",
     "verify": "npm run typecheck && npm run lint && npm test && npm run build",
     "contracts:test": "npm --prefix contracts test",

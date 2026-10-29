@@ -127,8 +127,8 @@ export function SourceEditor({ value, onChange, error }: { value: SourceValue | 
         <Notice tone="info">
           {t(
             <>
-              indicator() scripts only generate signals and don&apos;t place orders. To automate them you need the &lsquo;external signal
-              webhook&rsquo; execution mode, which sends TradingView alerts (alertcondition) to the platform webhook (Phase 2).
+              indicator() scripts only generate signals and don&apos;t place orders. To automate them, choose the &lsquo;external signal
+              webhook&rsquo; execution mode and point a TradingView alert (alertcondition) at the bot&apos;s signal webhook.
             </>,
             <>
               indicator() 스크립트는 신호만 만들고 주문을 내지 않습니다. 자동매매로 연결하려면 TradingView 알림(alertcondition)을 플랫폼 Webhook으로 보내는
