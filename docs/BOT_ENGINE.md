@@ -49,9 +49,31 @@ Each subscriber runs at most once per signal (`bot_executions`, unique `(signal,
 
 **Position cap:** there is no pyramiding, so a bot position is never larger than one order, which is at most `maxOrderUsd` (≤ `maxPositionUsd`).
 
+## Copy trading
+A lead trader registers a bot with the **Copy trading** strategy type, which uses the execution mode **Copy my Hyperliquid trades** (`COPY_TRADE`). It goes through the same review as any bot: submit, admin approves, then the leader publishes it (LIVE). The leader's fee is the bot fee: each follower consents to it, and it is charged as the Builder Fee on every copied order. The leader earns the bot-owner share of the settled Builder Fee.
+
+- **Source:** the leader trades on their own Hyperliquid account, the bot owner's verified wallet, either on Hyperliquid or on `/trade`. Only the bot's listed markets are copied.
+- **Detection** (`lib/engine/copy.ts#runCopyTick`, every minute from the same cron):
+  - The engine reads the leader's positions and account value. A change in a market's position size since the last look becomes a `COPY` signal, whose payload holds the previous and new size, the leader's account value and leverage.
+  - The first look at a market records only a baseline (`IGNORED`). Positions already open then are not copied.
+- **Sizing (proportional):**
+  - Follower size = leader size × follower allocation ÷ leader account value, at the leader's leverage. This is capped by the bot's max position and max leverage, and each order is capped by its max order.
+  - The allocation is stored in `bot_subscriptions.order_usd`: 20 to 1,000,000 USDC.
+  - A trade under Hyperliquid's 10 USDC minimum at the follower's allocation is skipped.
+- **What followers copy** (`planCopy`):
+  - A new leader position or a flip: opened, closing the opposite side first.
+  - Adds and reductions: applied to the follower's copied position.
+  - Closes: closed.
+  - A follower who joins while the leader already holds a position starts with the leader's next new position.
+- **Protection:**
+  - Each copied position keeps one reduce-only stop at the bot's stop-loss % from the average entry. After an add or a reduction, the new stop is placed before the old one is canceled.
+  - If no stop can be placed, the position is closed (fail closed).
+  - The daily loss limit blocks opening or growing positions, but not reducing or closing them.
+- **Latency:** followers trade up to about a minute after the leader, at their own fill prices.
+
 ## Running it
 **Vercel (production)**
-- `vercel.json` cron calls `/api/cron/engine` every minute, which runs the template tick and retries signals left `RECEIVED` for more than 2 minutes.
+- `vercel.json` cron calls `/api/cron/engine` every minute. It runs the template tick and the copy-trading tick, and retries signals left `RECEIVED` for more than 2 minutes.
 - `/api/cron/settlement` runs every 5 minutes and pulls fills, so performance and Builder Fee events update.
 - Both cron routes require `Authorization: Bearer $CRON_SECRET`; Vercel sends this automatically when `CRON_SECRET` is set.
 - Webhook signals don't wait for cron.

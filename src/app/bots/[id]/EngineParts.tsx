@@ -9,12 +9,16 @@ import { apiFetch } from "@/lib/client-api";
 import type { ReadinessItem } from "@/lib/engine/readiness";
 
 /** What still has to be done before the bot can trade for this subscriber. */
-export function ReadinessList({ items }: { items: ReadinessItem[] }) {
+export function ReadinessList({ items, copy = false }: { items: ReadinessItem[]; copy?: boolean }) {
   const ready = items.every((i) => i.ok);
   return (
     <div className="space-y-2" data-testid="bot-readiness">
       <p className={`font-semibold ${ready ? "text-up" : "text-warn"}`}>
-        {ready ? "Ready — the bot trades for you on its next signal." : "Not trading for you yet — finish the steps below."}
+        {ready
+          ? copy
+            ? "Ready — you copy the leader's next new position."
+            : "Ready — the bot trades for you on its next signal."
+          : "Not trading for you yet — finish the steps below."}
       </p>
       <ul className="space-y-1.5">
         {items.map((i) => (
@@ -43,10 +47,23 @@ export function ReadinessList({ items }: { items: ReadinessItem[] }) {
 }
 
 /** Subscriber's USDC amount per signal. */
-export function TradeAmount({ botId, orderUsd, maxOrderUsd, mainnet }: { botId: string; orderUsd: number | null; maxOrderUsd: number; mainnet: boolean }) {
+export function TradeAmount({
+  botId,
+  orderUsd,
+  maxOrderUsd,
+  mainnet,
+  copy = false,
+}: {
+  botId: string;
+  orderUsd: number | null;
+  maxOrderUsd: number;
+  mainnet: boolean;
+  /** Copy-trading bot: the value is the follower's allocation. */
+  copy?: boolean;
+}) {
   const { L } = useI18n();
   const router = useRouter();
-  const [value, setValue] = useState(String(orderUsd ?? Math.min(100, maxOrderUsd)));
+  const [value, setValue] = useState(String(orderUsd ?? (copy ? 100 : Math.min(100, maxOrderUsd))));
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ tone: "info" | "down"; text: string } | null>(null);
   return (
@@ -68,11 +85,22 @@ export function TradeAmount({ botId, orderUsd, maxOrderUsd, mainnet }: { botId: 
       }}
     >
       <label className="block text-xs text-muted" htmlFor="order-usd">
-        Amount per trade (USDC, max {maxOrderUsd}){mainnet ? " — real funds" : ""}
+        {copy ? "Copy allocation (USDC)" : `Amount per trade (USDC, max ${maxOrderUsd})`}
+        {mainnet ? " — real funds" : ""}
       </label>
       {mainnet && !orderUsd && <p className="text-xs text-warn">Saving an amount lets the bot trade real funds for you on mainnet.</p>}
+      {copy && <p className="text-xs text-faint">A new allocation applies from the leader&apos;s next change; positions already copied keep their size until then.</p>}
       <div className="flex gap-2">
-        <input id="order-usd" type="number" min={11} max={maxOrderUsd} step={1} value={value} onChange={(e) => setValue(e.target.value)} className="num min-w-0 flex-1" />
+        <input
+          id="order-usd"
+          type="number"
+          min={copy ? 20 : 11}
+          max={copy ? undefined : maxOrderUsd}
+          step={1}
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          className="num min-w-0 flex-1"
+        />
         <button type="submit" className={buttonClass("secondary", "sm")} disabled={busy}>
           Save
         </button>

@@ -9,6 +9,7 @@
  * Run: npm run worker:bots   (requires DATABASE_URL and BOT_ENGINE_ENABLED=true)
  */
 import { getConfig } from "@/lib/config";
+import { runCopyTick } from "@/lib/engine/copy";
 import { getDb } from "@/lib/db/client";
 import { engineAvailability, retryStaleSignals } from "@/lib/engine/execute";
 import { runTrendTick } from "@/lib/engine/trend";
@@ -35,8 +36,9 @@ async function main() {
   while (!stopping) {
     try {
       const emitted = await runTrendTick(db, hl);
+      const copied = await runCopyTick(db, hl);
       const retried = await retryStaleSignals(db, hl);
-      if (emitted.length || retried) console.log(`[bots] ${new Date().toISOString()}`, { emitted, retried });
+      if (emitted.length || copied.length || retried) console.log(`[bots] ${new Date().toISOString()}`, { emitted, copied, retried });
     } catch (err) {
       console.error("[bots] tick failed", err instanceof Error ? err.message : err);
     }

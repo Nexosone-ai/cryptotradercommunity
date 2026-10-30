@@ -3,20 +3,22 @@ import { HL_MAX_PERP_BUILDER_FEE_TENTHS_BP } from "../config";
 import { sourceInputSchema, type SourceMeta } from "./source";
 import { bi } from "../i18n";
 
-export const STRATEGY_TYPES = ["TREND_FOLLOWING", "GRID", "MARTINGALE", "TP_TRADING", "ARBITRAGE", "CUSTOM"] as const;
+export const STRATEGY_TYPES = ["TREND_FOLLOWING", "GRID", "MARTINGALE", "TP_TRADING", "ARBITRAGE", "COPY_TRADING", "CUSTOM"] as const;
 export const STRATEGY_LABELS: Record<(typeof STRATEGY_TYPES)[number], string> = {
   TREND_FOLLOWING: "Trend Following",
   GRID: "Grid",
   MARTINGALE: "Martingale",
   TP_TRADING: "TP Trading",
   ARBITRAGE: "Arbitrage",
+  COPY_TRADING: "Copy trading",
   CUSTOM: "Custom",
 };
-export const EXECUTION_MODES = ["PLATFORM_TEMPLATE", "VERIFIED_PACKAGE", "WEBHOOK_SIGNAL"] as const;
+export const EXECUTION_MODES = ["PLATFORM_TEMPLATE", "VERIFIED_PACKAGE", "WEBHOOK_SIGNAL", "COPY_TRADE"] as const;
 export const EXECUTION_LABELS: Record<(typeof EXECUTION_MODES)[number], string> = {
   PLATFORM_TEMPLATE: bi("Platform strategy template", "플랫폼 전략 템플릿"),
   VERIFIED_PACKAGE: bi("Verified strategy package (review required)", "검증된 전략 패키지 (심사 필요)"),
   WEBHOOK_SIGNAL: bi("External signal webhook (security review required)", "외부 신호 Webhook (보안 심사 필요)"),
+  COPY_TRADE: "Copy my Hyperliquid trades (copy trading)",
 };
 export const TIMEFRAMES = ["1m", "5m", "15m", "1h", "4h", "1d"] as const;
 export const ORDER_TYPES = ["MARKET", "LIMIT", "STOP_MARKET", "TAKE_PROFIT"] as const;
@@ -75,7 +77,15 @@ export const botConfigSchema = z
   .refine((c) => c.risk.maxOrderUsd <= c.risk.maxPositionUsd, {
     path: ["risk", "maxOrderUsd"],
     message: bi("The max order size must not exceed the max position size.", "1회 최대 주문은 최대 포지션 규모 이하여야 합니다."),
+  })
+  .refine((c) => (c.strategyType === "COPY_TRADING") === (c.executionMode === "COPY_TRADE"), {
+    path: ["executionMode"],
+    message: "Copy trading uses the execution mode “Copy my Hyperliquid trades”, and that mode is only for the Copy trading strategy type.",
   });
+
+export function isCopyBot(c: Pick<BotConfig, "executionMode">): boolean {
+  return c.executionMode === "COPY_TRADE";
+}
 
 export type BotConfig = z.infer<typeof botConfigSchema>;
 /** What is stored in bots.config: the source is replaced by its metadata + hash. */

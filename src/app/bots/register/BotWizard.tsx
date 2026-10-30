@@ -87,6 +87,20 @@ export function BotWizard({ ownerAddress, platformMaxFeeTenthsBp, editId, initia
   }, [editId]);
 
   const set = <K extends keyof Form>(k: K, v: Form[K]) => setF((p) => ({ ...p, [k]: v }));
+  // Copy trading always pairs the Copy trading strategy type with the "copy my trades" execution mode.
+  const setStrategy = (s: Form["strategyType"]) =>
+    setF((p) => ({
+      ...p,
+      strategyType: s,
+      executionMode: s === "COPY_TRADING" ? "COPY_TRADE" : p.executionMode === "COPY_TRADE" ? "PLATFORM_TEMPLATE" : p.executionMode,
+    }));
+  const setExecution = (m: Form["executionMode"]) =>
+    setF((p) => ({
+      ...p,
+      executionMode: m,
+      strategyType: m === "COPY_TRADE" ? "COPY_TRADING" : p.strategyType === "COPY_TRADING" ? "CUSTOM" : p.strategyType,
+    }));
+  const copyMode = f.executionMode === "COPY_TRADE";
   const setRisk = (k: keyof Form["risk"], v: number | boolean) => setF((p) => ({ ...p, risk: { ...p.risk, [k]: v } }));
   const issueFor = (prefix: string) => issues.filter((i) => i.path.join(".").startsWith(prefix)).map((i) => L(i.message));
 
@@ -189,13 +203,21 @@ export function BotWizard({ ownerAddress, platformMaxFeeTenthsBp, editId, initia
         {step === 1 && (
           <>
             <Field label={t("Strategy type", "전략 유형")}>
-              <select value={f.strategyType} onChange={(e) => set("strategyType", e.target.value as Form["strategyType"])}>
+              <select value={f.strategyType} onChange={(e) => setStrategy(e.target.value as Form["strategyType"])}>
                 {STRATEGY_TYPES.map((s) => (
                   <option key={s} value={s}>
                     {L(STRATEGY_LABELS[s])}
                   </option>
                 ))}
               </select>
+              {copyMode && (
+                <p className="mt-1 text-xs text-faint" data-testid="copy-trading-help">
+                  Copy trading: you trade on your own Hyperliquid account (the wallet you&apos;re signed in with), on Hyperliquid or on the Trade page. Every
+                  minute the platform copies changes to your positions in the markets below into your followers&apos; accounts, scaled to each
+                  follower&apos;s allocation (e.g. allocating 10% of your account value gets 10% of each of your positions). Your additional fee applies
+                  to every copied order. Admin review is required before you can go live.
+                </p>
+              )}
             </Field>
             <SourceEditor value={f.source as never} onChange={(v) => set("source", v)} error={err("source")} />
             <Field label={t("Markets (Hyperliquid perps, up to 10)", "거래 마켓 (Hyperliquid Perpetuals, 최대 10개)")}>
@@ -309,7 +331,7 @@ export function BotWizard({ ownerAddress, platformMaxFeeTenthsBp, editId, initia
         {step === 3 && (
           <>
             <Field label={t("Execution mode", "실행 방식")}>
-              <select value={f.executionMode} onChange={(e) => set("executionMode", e.target.value as Form["executionMode"])}>
+              <select value={f.executionMode} onChange={(e) => setExecution(e.target.value as Form["executionMode"])}>
                 {EXECUTION_MODES.map((m) => (
                   <option key={m} value={m}>
                     {L(EXECUTION_LABELS[m])}
@@ -318,7 +340,7 @@ export function BotWizard({ ownerAddress, platformMaxFeeTenthsBp, editId, initia
               </select>
               <p className="mt-1 text-xs text-faint">
                 {t(
-                  "Uploaded code is never run on the platform. External signal webhook: your TradingView alerts (or any HTTPS client) send long/short/close signals and the platform places subscribers' orders. Platform template: Trend Following uses an EMA 9/21 crossover. Verified packages aren't available yet.",
+                  "Uploaded code is never run on the platform. External signal webhook: your TradingView alerts (or any HTTPS client) send long/short/close signals and the platform places subscribers' orders. Platform template: Trend Following uses an EMA 9/21 crossover. Copy my Hyperliquid trades: followers copy your own account's positions (Copy trading strategy type). Verified packages aren't available yet.",
                   "업로드한 임의 코드는 프로덕션 서버에서 실행하지 않습니다. 패키지·Webhook은 샌드박스 격리와 보안 심사 후 Phase 2에서 활성화됩니다.",
                 )}
               </p>

@@ -1,6 +1,6 @@
 import Decimal from "decimal.js";
 import type { SessionUser } from "../auth/session";
-import type { BotConfig } from "../bots/schema";
+import { isCopyBot, type BotConfig } from "../bots/schema";
 import { getConfig } from "../config";
 import type { Db } from "../db/client";
 import type { botSubscriptions, bots } from "../db/schema";
@@ -30,28 +30,36 @@ export async function subscriberReadiness(
   const cfg = getConfig();
   const config = bot.config as BotConfig;
   const engine = engineAvailability();
+  const copy = isCopyBot(config);
   const items: ReadinessItem[] = [
     { key: "engine", ok: engine.enabled, label: "Bot engine running", hint: engine.reason ?? undefined },
     {
       key: "bot",
-      ok: bot.status === "LIVE" && (config.executionMode === "WEBHOOK_SIGNAL" || usesTrendTemplate(config)),
-      label: "Bot is live and sends signals",
+      ok: bot.status === "LIVE" && (copy || config.executionMode === "WEBHOOK_SIGNAL" || usesTrendTemplate(config)),
+      label: copy ? "Lead trader is live and being copied" : "Bot is live and sends signals",
       hint:
         bot.status !== "LIVE"
           ? "The owner has paused this bot."
-          : config.executionMode === "WEBHOOK_SIGNAL"
+          : copy || config.executionMode === "WEBHOOK_SIGNAL"
             ? undefined
             : usesTrendTemplate(config)
               ? undefined
               : "This bot's strategy template isn't automated yet; only Trend Following templates and external signal bots trade.",
     },
     { key: "subscription", ok: sub.status === "ACTIVE", label: "Subscription active", hint: sub.status === "REQUIRES_RECONSENT" ? "Re-consent to the changed settings below." : undefined },
-    {
-      key: "amount",
-      ok: Boolean(sub.orderUsd),
-      label: sub.orderUsd ? `Amount per trade: ${Math.min(sub.orderUsd, config.risk.maxOrderUsd)} USDC` : "Amount per trade set",
-      hint: sub.orderUsd ? undefined : "Set how many USDC the bot opens per signal (below).",
-    },
+    copy
+      ? {
+          key: "amount",
+          ok: Boolean(sub.orderUsd),
+          label: sub.orderUsd ? `Copy allocation: ${sub.orderUsd} USDC` : "Copy allocation set",
+          hint: sub.orderUsd ? undefined : "Set how many USDC copy the leader (below).",
+        }
+      : {
+          key: "amount",
+          ok: Boolean(sub.orderUsd),
+          label: sub.orderUsd ? `Amount per trade: ${Math.min(sub.orderUsd, config.risk.maxOrderUsd)} USDC` : "Amount per trade set",
+          hint: sub.orderUsd ? undefined : "Set how many USDC the bot opens per signal (below).",
+        },
   ];
 
   const agent = await activeAgent(db, user.id, hl.network);
@@ -98,9 +106,11 @@ export async function subscriberReadiness(
   } catch {
     accountValue = null;
   }
+  // Copy trading: the allocation is capital the copied positions use, so the account should hold at least that much.
+  const needed = copy ? new Decimal(sub.orderUsd ?? 1) : sub.orderUsd ? Decimal.min(sub.orderUsd, config.risk.maxOrderUsd).div(config.risk.maxLeverage) : new Decimal(1);
   items.push({
     key: "funds",
-    ok: accountValue !== null && accountValue.gte(sub.orderUsd ? Decimal.min(sub.orderUsd, config.risk.maxOrderUsd).div(config.risk.maxLeverage) : 1),
+    ok: accountValue !== null && accountValue.gte(needed),
     label: accountValue === null ? "Hyperliquid account funded" : `Hyperliquid account value: ${accountValue.toFixed(2)} USDC`,
     hint:
       accountValue === null
@@ -109,7 +119,9 @@ export async function subscriberReadiness(
           ? cfg.isMainnet
             ? "Deposit USDC to your Hyperliquid account."
             : "Get test USDC from the Hyperliquid testnet faucet (app.hyperliquid-testnet.xyz/drip)."
-          : undefined,
+          : copy && accountValue.lt(needed)
+            ? `Below your copy allocation (${needed.toFixed()} USDC): deposit more or lower the allocation, or copied trades may be rejected.`
+            : undefined,
   });
   return items;
 }

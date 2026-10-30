@@ -6,7 +6,7 @@ import { FeeBreakdown, RiskBadge, VerificationBadge } from "@/components/bots";
 import { Badge, buttonClass, Card, Notice, Stat } from "@/components/ui";
 import { getCurrentUser } from "@/lib/auth/current";
 import { assessBotRisk } from "@/lib/bots/risk";
-import { EXECUTION_LABELS, STRATEGY_LABELS, type BotConfig } from "@/lib/bots/schema";
+import { EXECUTION_LABELS, isCopyBot, STRATEGY_LABELS, type BotConfig } from "@/lib/bots/schema";
 import { getBotForViewer, getBotSource, listBotVersions } from "@/lib/bots/service";
 import { BotSourcePanel } from "@/components/BotSourcePanel";
 import { getConfig } from "@/lib/config";
@@ -71,6 +71,7 @@ export default async function BotDetail({ params, searchParams }: PageProps<"/bo
   const engine = engineAvailability();
   const webhookBot = config.executionMode === "WEBHOOK_SIGNAL";
   const trendBot = usesTrendTemplate(config);
+  const copyBot = isCopyBot(config);
   const source = await getBotSource(db, bot, viewer);
   const curve = fills
     .slice()
@@ -289,6 +290,7 @@ export default async function BotDetail({ params, searchParams }: PageProps<"/bo
                 live={bot.status === "LIVE"}
                 feeTenthsBp={bot.feeTenthsBp}
                 maxOrderUsd={config.risk.maxOrderUsd}
+                copy={copyBot}
                 subscription={sub ? { status: sub.status, acceptedFeeTenthsBp: sub.acceptedFeeTenthsBp, pendingFeeTenthsBp: sub.pendingFeeTenthsBp } : null}
               />
             )}
@@ -298,9 +300,9 @@ export default async function BotDetail({ params, searchParams }: PageProps<"/bo
             <Card>
               <h2 className="mb-3 font-semibold">Bot trading for you</h2>
               <div className="space-y-4 text-sm">
-                <ReadinessList items={readiness} />
+                <ReadinessList items={readiness} copy={copyBot} />
                 {(sub.status === "ACTIVE" || sub.status === "REQUIRES_RECONSENT") && (
-                  <TradeAmount botId={bot.id} orderUsd={sub.orderUsd} maxOrderUsd={config.risk.maxOrderUsd} mainnet={cfg.isMainnet} />
+                  <TradeAmount botId={bot.id} orderUsd={sub.orderUsd} maxOrderUsd={config.risk.maxOrderUsd} mainnet={cfg.isMainnet} copy={copyBot} />
                 )}
                 <div>
                   <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Your recent bot activity</h3>
@@ -341,6 +343,12 @@ export default async function BotDetail({ params, searchParams }: PageProps<"/bo
                   ) : (
                     <p className="text-muted">External signal webhook. Token set: {bot.webhookSecretHash ? "yes" : "no"}.</p>
                   )
+                ) : copyBot ? (
+                  <p className="text-muted" data-testid="copy-trading-info">
+                    Copy trading: every minute the engine reads the leader&apos;s Hyperliquid positions ({bot.ownerWalletAddress.slice(0, 6)}…
+                    {bot.ownerWalletAddress.slice(-4)}) in {config.markets.join(", ")} and copies each change to followers, scaled to their allocation.
+                    Positions already open when a market is first watched aren&apos;t copied; trade on Hyperliquid or the Trade page as usual.
+                  </p>
                 ) : trendBot ? (
                   <p className="text-muted">
                     Platform Trend Following template: EMA({TREND_TEMPLATE.fast}) / EMA({TREND_TEMPLATE.slow}) crossover on closed {config.timeframe} candles of{" "}

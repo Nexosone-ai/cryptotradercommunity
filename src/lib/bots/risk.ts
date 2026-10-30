@@ -33,6 +33,9 @@ export function assessBotRisk(c: BotConfig, platformMaxFeeTenthsBp: number): { l
   if (c.executionMode === "WEBHOOK_SIGNAL") {
     warn("WEBHOOK_REVIEW", bi("External webhook signals need a security review of signing, replay protection and IP restrictions.", "외부 Webhook 신호는 서명·재전송 방지·IP 제한 보안 심사가 필요합니다."));
   }
+  if (c.executionMode === "COPY_TRADE") {
+    warn("COPY_TRADING", "Followers copy the leader's own Hyperliquid trades about a minute later, at their own prices; the leader's results don't carry over exactly.");
+  }
   if (c.executionMode === "VERIFIED_PACKAGE") {
     warn("PACKAGE_REVIEW", bi("Strategy packages run only after sandbox isolation and dependency checks (Phase 2).", "전략 패키지는 샌드박스 격리·의존성 검사 후 실행됩니다 (Phase 2)."));
   }

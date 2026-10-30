@@ -34,19 +34,22 @@ export function SubscribePanel({
   live,
   feeTenthsBp,
   maxOrderUsd,
+  copy = false,
   subscription,
 }: {
   botId: string;
   live: boolean;
   feeTenthsBp: number;
   maxOrderUsd: number;
+  /** Copy-trading bot: the follower sets an allocation instead of an amount per trade. */
+  copy?: boolean;
   subscription: { status: string; acceptedFeeTenthsBp: number; pendingFeeTenthsBp: number | null } | null;
 }) {
   const w = useWallet();
   const { t, L } = useI18n();
   const { busy, error, run } = useAction();
   const [accept, setAccept] = useState(false);
-  const [amount, setAmount] = useState(String(Math.min(100, maxOrderUsd)));
+  const [amount, setAmount] = useState(String(copy ? 100 : Math.min(100, maxOrderUsd)));
 
   if (!w.me?.user) {
     return (
@@ -90,11 +93,32 @@ export function SubscribePanel({
         <>
           {w.me.config.network === "mainnet" && (
             <Notice tone="down">
-              Mainnet: this bot places real orders with real funds in your Hyperliquid account, automatically, on every signal. You can lose
-              money. Unsubscribe at any time to stop new orders.
+              {copy
+                ? "Mainnet: this copies the lead trader's trades into your Hyperliquid account with real funds, automatically. You can lose money. Unsubscribe at any time to stop new orders."
+                : "Mainnet: this bot places real orders with real funds in your Hyperliquid account, automatically, on every signal. You can lose money. Unsubscribe at any time to stop new orders."}
             </Notice>
           )}
-          {!reconsent && (
+          {!reconsent && copy && (
+            <div>
+              <label className="block text-xs text-muted" htmlFor="subscribe-amount">
+                Copy allocation (USDC)
+              </label>
+              <input
+                id="subscribe-amount"
+                type="number"
+                min={20}
+                step={1}
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                className="num mt-1 w-full"
+              />
+              <p className="mt-1 text-xs text-faint">
+                Your share of the leader: allocating 10% of the leader&apos;s account value copies 10% of each new position they open, at their
+                leverage, with a stop loss. Keep at least this much USDC in your Hyperliquid account.
+              </p>
+            </div>
+          )}
+          {!reconsent && !copy && (
             <div>
               <label className="block text-xs text-muted" htmlFor="subscribe-amount">
                 Amount per trade (USDC, max {maxOrderUsd})

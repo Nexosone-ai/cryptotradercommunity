@@ -53,6 +53,10 @@ const STRATEGY_HELP: Record<
     en: "Profits from price differences. Approved only after we confirm it can actually execute once latency and fees are accounted for.",
     ko: "가격 차이를 이용하는 전략. 지연·수수료를 고려한 실행 가능성 검증 후에만 승인됩니다.",
   },
+  COPY_TRADING: {
+    en: "You trade on your own Hyperliquid account (your login wallet) and followers copy you. Every minute the platform mirrors your position changes in the listed markets into followers' accounts, scaled to each follower's allocation. Your fee applies to every copied order.",
+    ko: "본인 Hyperliquid 계정에서 거래하면 팔로워가 따라 거래합니다.",
+  },
   CUSTOM: {
     en: "Anything that doesn't fit the categories above. Please explain in detail how it works in the description.",
     ko: "위 분류에 해당하지 않는 전략. 설명란에 동작 방식을 자세히 적어 주세요.",

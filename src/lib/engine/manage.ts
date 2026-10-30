@@ -1,7 +1,7 @@
 import { and, eq } from "drizzle-orm";
 import { writeAudit } from "../audit";
 import type { SessionUser } from "../auth/session";
-import type { BotConfig } from "../bots/schema";
+import { isCopyBot, type BotConfig } from "../bots/schema";
 import type { Db } from "../db/client";
 import { botSubscriptions, bots } from "../db/schema";
 import { badRequest, conflict, forbidden, notFound } from "../http";
@@ -43,7 +43,17 @@ export async function setOrderUsd(db: Db, user: SessionUser, botId: string, netw
   return saved;
 }
 
+/** Copy-trading followers set an allocation instead: the USDC that mirrors the leader's whole account. */
+export const MIN_COPY_ALLOCATION_USD = 20;
+export const MAX_COPY_ALLOCATION_USD = 1_000_000;
+
 export function validateOrderUsd(orderUsd: number, config: BotConfig) {
+  if (isCopyBot(config)) {
+    if (!Number.isInteger(orderUsd) || orderUsd < MIN_COPY_ALLOCATION_USD || orderUsd > MAX_COPY_ALLOCATION_USD) {
+      throw badRequest("ALLOCATION_INVALID", `The copy allocation must be a whole number of USDC between ${MIN_COPY_ALLOCATION_USD} and ${MAX_COPY_ALLOCATION_USD}.`);
+    }
+    return;
+  }
   if (!Number.isInteger(orderUsd) || orderUsd < MIN_ORDER_USD) {
     throw badRequest("ORDER_USD_TOO_SMALL", `The amount per trade must be a whole number of at least ${MIN_ORDER_USD} USDC.`);
   }

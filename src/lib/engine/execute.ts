@@ -1,15 +1,16 @@
 import Decimal from "decimal.js";
-import { and, desc, eq, gte, lt, sql } from "drizzle-orm";
+import { and, desc, eq, lt, sql } from "drizzle-orm";
 import type { SessionUser } from "../auth/session";
-import type { BotConfig } from "../bots/schema";
+import { isCopyBot, type BotConfig } from "../bots/schema";
 import { getConfig } from "../config";
 import type { Db } from "../db/client";
-import { botExecutions, botPositions, botSignals, botSubscriptions, bots, engineLocks, orders, riskEvents, users } from "../db/schema";
+import { botExecutions, botPositions, botSignals, botSubscriptions, bots, engineLocks, riskEvents, users } from "../db/schema";
 import { ApiError } from "../http";
 import type { HlGateway } from "../hyperliquid/gateway";
-import { localize } from "../i18n";
 import { decryptAgentKey } from "../trading/agent-keys";
 import { activeAgent, placeOrder } from "../trading/service";
+import { cancelStop, message, positionSize, realizedPnlToday, type Outcome } from "./common";
+import { copyToFollower } from "./copy";
 import type { TargetAction } from "./signals";
 
 /**
@@ -29,7 +30,6 @@ const MAX_SUBSCRIBERS_PER_SIGNAL = 200;
 type Bot = typeof bots.$inferSelect;
 type Subscription = typeof botSubscriptions.$inferSelect;
 type Signal = typeof botSignals.$inferSelect;
-type Outcome = { status: "DONE" | "SKIPPED" | "FAILED"; reason: string; orderIds: string[] };
 
 export function engineAvailability(): { enabled: boolean; reason: string | null } {
   const cfg = getConfig();
@@ -63,8 +63,6 @@ async function acquireLock(db: Db, key: string, holder: string): Promise<boolean
 async function releaseLock(db: Db, key: string, holder: string) {
   await db.delete(engineLocks).where(and(eq(engineLocks.key, key), eq(engineLocks.holder, holder)));
 }
-
-const message = (err: unknown) => localize(err instanceof Error ? err.message : String(err), "en");
 
 /**
  * Runs a RECEIVED signal for every active subscriber. Safe to call again: each
@@ -138,7 +136,7 @@ async function runForSubscriber(db: Db, hl: HlGateway, bot: Bot, config: BotConf
   if (!claim) return null;
   let outcome: Outcome;
   try {
-    outcome = await moveToTarget(db, hl, bot, config, signal.coin, sub, target);
+    outcome = isCopyBot(config) ? await copyToFollower(db, hl, bot, config, signal, sub) : await moveToTarget(db, hl, bot, config, signal.coin, sub, target);
   } catch (err) {
     const reason = err instanceof ApiError ? `${err.code}: ${message(err)}` : message(err);
     outcome = { status: "FAILED", reason: reason.slice(0, 500), orderIds: [] };
@@ -258,40 +256,6 @@ async function moveToTarget(db: Db, hl: HlGateway, bot: Bot, config: BotConfig, 
     reason: `${closedNote}Opened ${target.toLowerCase()} ${open.filledSize} ${coin} at ${entry.toString()}; stop loss at ${trigger.toSignificantDigits(6).toString()}.`,
     orderIds,
   };
-}
-
-/** Signed position size for a coin on Hyperliquid (0 when flat). */
-async function positionSize(hl: HlGateway, wallet: string, coin: string): Promise<Decimal> {
-  const state = (await hl.clearinghouseState(wallet)) as { assetPositions?: { position: { coin: string; szi: string } }[] };
-  const p = state.assetPositions?.find((a) => a.position.coin === coin);
-  return p ? new Decimal(p.position.szi) : new Decimal(0);
-}
-
-async function cancelStop(db: Db, hl: HlGateway, user: SessionUser, coin: string, cloid: string) {
-  try {
-    const agent = await activeAgent(db, user.id, hl.network);
-    const asset = (await hl.perpAssets()).find((a) => a.name === coin);
-    if (agent && asset) await hl.cancelByCloid(decryptAgentKey(agent.encryptedKey, agent.agentAddress), asset.index, cloid as `0x${string}`);
-    await db.update(orders).set({ status: "CANCELED", updatedAt: new Date() }).where(eq(orders.cloid, cloid));
-  } catch {
-    // Hyperliquid drops reduce-only stops once there is nothing left to reduce.
-  }
-}
-
-/** Realized PnL minus fees today (UTC) from fills of this subscription's bot orders. */
-async function realizedPnlToday(db: Db, hl: HlGateway, wallet: string, subscriptionId: string): Promise<Decimal> {
-  const dayStart = new Date();
-  dayStart.setUTCHours(0, 0, 0, 0);
-  const mine = await db
-    .select({ cloid: orders.cloid })
-    .from(orders)
-    .where(and(eq(orders.subscriptionId, subscriptionId), gte(orders.createdAt, new Date(dayStart.getTime() - 7 * 86_400_000))));
-  if (mine.length === 0) return new Decimal(0);
-  const cloids = new Set(mine.map((o) => o.cloid.toLowerCase()));
-  const fills = await hl.userFillsByTime(wallet, dayStart.getTime());
-  return fills
-    .filter((f) => f.cloid && cloids.has(f.cloid.toLowerCase()))
-    .reduce((sum, f) => sum.plus(f.closedPnl).minus(f.fee), new Decimal(0));
 }
 
 /** Signals still RECEIVED after a while (e.g. the request ended before after() ran): run them again. */

@@ -63,7 +63,7 @@ export async function recordSignal(
   input: {
     botId: string;
     network: "testnet" | "mainnet";
-    source: "WEBHOOK" | "TEMPLATE";
+    source: "WEBHOOK" | "TEMPLATE" | "COPY";
     action: TargetAction;
     coin: string;
     dedupeKey: string;

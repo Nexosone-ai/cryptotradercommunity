@@ -153,7 +153,10 @@ export const botSubscriptions = pgTable("bot_subscriptions", {
   acceptedFeeTenthsBp: integer("accepted_fee_tenths_bp").notNull(),
   acceptedConfigVersion: integer("accepted_config_version").notNull(),
   pendingFeeTenthsBp: integer("pending_fee_tenths_bp"),
-  /** USDC notional the engine opens per signal for this subscriber (capped by the bot's max order). Null = not set, no bot orders. */
+  /**
+   * USDC notional the engine opens per signal for this subscriber (capped by the bot's max order). Null = not set, no bot orders.
+   * Copy-trading bots (COPY_TRADE): the follower's allocation, which mirrors the leader's whole account value.
+   */
   orderUsd: integer("order_usd"),
   consentedAt: timestamp("consented_at", { withTimezone: true }).notNull(),
   stoppedAt: timestamp("stopped_at", { withTimezone: true }),
@@ -281,7 +284,7 @@ export const botSignals = pgTable("bot_signals", {
   id: id(),
   botId: text("bot_id").notNull().references(() => bots.id),
   network: networkEnum("network").notNull(),
-  /** WEBHOOK | TEMPLATE */
+  /** WEBHOOK | TEMPLATE | COPY (a change in a copy-trading leader's position) */
   source: text("source").notNull(),
   /** Target position: LONG | SHORT | FLAT */
   action: text("action").notNull(),

@@ -288,6 +288,27 @@ test("swap page: 'opening soon' for users until SWAP_OPEN; admins see 5 chains, 
   await context.close();
 });
 
+test("copy trading: the wizard pairs the Copy trading type with the copy execution mode; the leader's bot page explains the copying", async ({ browser, baseURL }) => {
+  const { generatePrivateKey } = await import("viem/accounts");
+  const { page, context } = await walletPage(browser, generatePrivateKey());
+  await page.goto("/");
+  await signInViaUi(page);
+
+  await page.goto("/bots/register");
+  await page.getByRole("button", { name: /Strategy & source code/ }).click();
+  await page.locator('select:has(option[value="COPY_TRADING"])').selectOption("COPY_TRADING");
+  await expect(page.getByTestId("copy-trading-help")).toContainText("scaled to each follower's allocation");
+  await page.getByRole("button", { name: /Execution & developer/ }).click();
+  await expect(page.locator('select:has(option[value="COPY_TRADE"])')).toHaveValue("COPY_TRADE");
+
+  const slug = `copy-${Date.now()}`;
+  const res = await api(page.request, baseURL!).post("/api/bots", { ...botInput(slug), strategyType: "COPY_TRADING", executionMode: "COPY_TRADE" });
+  expect(res.status()).toBe(201);
+  await page.goto(`/bots/${slug}`);
+  await expect(page.getByTestId("copy-trading-info")).toContainText("copies each change to followers, scaled to their allocation");
+  await context.close();
+});
+
 test("docs state: no platform swap fee; each party is responsible for their swap", async ({ page }) => {
   await page.goto("/docs#swap");
   await expect(page.locator("#swap")).toContainText("The platform charges no fee for swaps.");
