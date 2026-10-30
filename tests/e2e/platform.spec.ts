@@ -153,6 +153,8 @@ test("bot lifecycle: forged owner ignored, hidden until approved, admin approves
   await expect(page.getByRole("heading", { name: "E2E Trend" })).toBeVisible();
   await expect(page.getByText("Not enough verified data").first()).toBeVisible();
   await expect(page.getByText(owner.account.address)).toBeVisible();
+  // What actually places orders is stated, whatever the bot is called.
+  await expect(page.getByTestId("strategy-runs")).toBeVisible();
 
   // Subscriber consents; a fee increase then requires re-consent.
   expect((await rt.post(`/api/bots/${bot.id}/subscribe`, { acceptedFeeTenthsBp: 20, acceptRisk: true })).status()).toBe(200);
@@ -199,6 +201,10 @@ test("admin appoints a wholesale partner; client referral link; affiliate joins 
   await admin.page.getByRole("button", { name: "Appoint wholesale partner" }).click();
   await expect(admin.page.getByText("Wholesale partner appointed.")).toBeVisible();
   await expect(admin.page.getByTestId("admin-partners").getByText("ACTIVE", { exact: true })).toBeVisible();
+  await admin.page.getByRole("button", { name: "System & risk", exact: true }).click();
+  const health = admin.page.getByTestId("engine-health");
+  await expect(health).toContainText("Last engine run");
+  await expect(health).toContainText("without a stop loss");
   await admin.context.close();
 
   // Now the partner sees the section on My page and reaches the dashboard from it.

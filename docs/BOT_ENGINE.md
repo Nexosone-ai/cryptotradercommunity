@@ -33,11 +33,18 @@ Each subscriber runs at most once per signal (`bot_executions`, unique `(signal,
 
 1. **Reconcile.** The engine only ever trades the position **it opened** (`bot_positions`), capped at what is still open on Hyperliquid. If the stop fired or the user closed the position, the engine forgets it. Manual positions in the same coin are never closed beyond the bot's own size.
 2. **Repeat signal:** if the bot already holds the target side, nothing happens.
-3. **Close** the opposite position with a reduce-only market order, and cancel its stop.
+3. **Close** the opposite position with a reduce-only market order, and cancel its stop. Only what actually closed counts: if the close fills partly, the rest stays tracked with its stop and nothing new opens.
 4. **Open** a market position of the subscriber's **amount per trade**. The amount must be at least 11 USDC and is capped at the bot's max order.
    - Before opening, cross leverage is set to the bot's max leverage (best effort).
    - Opening is skipped once today's (UTC) realized PnL minus fees of this subscription's orders reaches the bot's daily loss limit.
-5. **Stop loss.** A reduce-only `STOP_MARKET` trigger order rests on Hyperliquid at entry ± the bot's stop-loss %. If it can't be placed, the new position is closed immediately (fail closed).
+   - Opening is skipped while any position of the subscription has no stop loss (see Safety).
+   - Opening is skipped if the account would reach Hyperliquid's maintenance margin before the stop triggers (cross margin: equity − loss at the stop < 1.5 × maintenance margin, with maintenance = half the initial margin at the market's max leverage). The stop-loss % is a price move from entry, not a share of the margin.
+5. **Stop loss.** A reduce-only `STOP_MARKET` trigger order rests on Hyperliquid at entry ± the bot's stop-loss %. If it can't be placed, the new position is closed immediately (fail closed), and the close is checked on Hyperliquid. Whatever is still open is tracked **without a stop**, recorded as a CRITICAL `UNPROTECTED_POSITION` risk event, and handled by the guard.
+
+## Safety
+- **Lost order responses.** If Hyperliquid doesn't answer (timeout, network), the order may still have reached it. The gate looks the order up by cloid (`orderStatus`) a few times. If found, the order row gets Hyperliquid's result (`ORDER_RESPONSE_LOST`, WARN). If not, the row is `UNKNOWN` (`ORDER_RESULT_UNKNOWN`, CRITICAL) and the engine reads the position on Hyperliquid to see what the order did. An answer with an error (`HlRejectedError`) is `REJECTED`: nothing was placed.
+- **Every minute** (`runSafetyTick`, after the strategies): `reconcileOrders` asks Hyperliquid again about `UNKNOWN`/`PENDING` orders (after 10 minutes an unknown cloid is `ERROR`: it never reached Hyperliquid). `guardPositions` checks every tracked position under its bot's lock: closed on Hyperliquid → forgotten; still open but its stop isn't resting (it failed, or was canceled) → the stop is placed again at entry ± stop-loss %, or the position is closed.
+- **Admin → System → Engine health** shows the last engine run, the last signal, bot orders of the last 24 hours by result (including "result unknown"), open bot positions and how many have no stop, the last settlement sync, and critical risk events.
 
 **The order gate.** Every order goes through `placeOrder` with `source: "BOT"`, so all of its checks apply:
 - the subscription is active and the bot is LIVE;

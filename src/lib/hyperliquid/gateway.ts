@@ -1,8 +1,9 @@
 import "server-only";
-import { ExchangeClient, HttpTransport, InfoClient } from "@nktkas/hyperliquid";
+import { ApiRequestError, ExchangeClient, HttpTransport, InfoClient } from "@nktkas/hyperliquid";
 import { privateKeyToAccount } from "viem/accounts";
 import type { HlNetwork } from "../config";
 import type { AccountMode } from "./balance";
+import { HlRejectedError } from "./errors";
 
 /**
  * Thin, injectable wrapper over the Hyperliquid Info/Exchange APIs.
@@ -49,6 +50,16 @@ export interface HlFill {
   cloid?: string | null;
 }
 
+/** What Hyperliquid knows about one order (info `orderStatus`), looked up by cloid. */
+export interface HlOrderLookup {
+  /** open | filled | canceled | triggered | rejected | marginCanceled | …Rejected | …Canceled */
+  status: string;
+  oid: number;
+  origSz: string;
+  /** Size still open (0 once filled). */
+  sz: string;
+}
+
 export interface HlGateway {
   network: HlNetwork;
   perpAssets(): Promise<PerpAsset[]>;
@@ -64,6 +75,8 @@ export interface HlGateway {
   /** Standard ("default"), unifiedAccount, portfolioMargin or disabled. */
   accountMode(user: string): Promise<AccountMode>;
   openOrders(user: string): Promise<unknown[]>;
+  /** null when Hyperliquid has no order with this cloid (yet). */
+  orderStatus(user: string, cloid: `0x${string}`): Promise<HlOrderLookup | null>;
   userFills(user: string): Promise<HlFill[]>;
   candles(coin: string, interval: string, startTime: number): Promise<unknown[]>;
   marketOverview(): Promise<{ name: string; szDecimals: number; maxLeverage: number; markPx: string; funding: string; openInterest: string; dayNtlVlm: string; prevDayPx: string }[]>;
@@ -117,6 +130,12 @@ export function createHlGateway(network: HlNetwork): HlGateway {
       return s.balances.map((b) => ({ coin: b.coin, total: b.total, hold: b.hold }));
     },
     openOrders: (user) => info.frontendOpenOrders({ user: user as `0x${string}` }) as Promise<unknown[]>,
+    async orderStatus(user, cloid) {
+      const r = await info.orderStatus({ user: user as `0x${string}`, oid: cloid });
+      if (r.status !== "order") return null;
+      const o = r.order.order;
+      return { status: r.order.status, oid: o.oid, origSz: o.origSz, sz: o.sz };
+    },
     userFills: async (user) => (await info.userFills({ user: user as `0x${string}` })) as unknown as HlFill[],
     candles: (coin, interval, startTime) =>
       info.candleSnapshot({ coin, interval: interval as "1h", startTime }) as Promise<unknown[]>,
@@ -137,8 +156,14 @@ export function createHlGateway(network: HlNetwork): HlGateway {
         }));
     },
     async placeOrders(agentKey, orders, builder) {
-      const res = await exchangeFor(agentKey).order({ orders, grouping: "na", ...(builder ? { builder } : {}) });
-      return res.response.data.statuses as HlOrderStatus[];
+      try {
+        const res = await exchangeFor(agentKey).order({ orders, grouping: "na", ...(builder ? { builder } : {}) });
+        return res.response.data.statuses as HlOrderStatus[];
+      } catch (err) {
+        // Hyperliquid answered with an error: nothing was placed. Anything else (timeout, network) is unknown.
+        if (err instanceof ApiRequestError) throw new HlRejectedError(err.message);
+        throw err;
+      }
     },
     async cancelByCloid(agentKey, asset, cloid) {
       await exchangeFor(agentKey).cancelByCloid({ cancels: [{ asset, cloid }] });

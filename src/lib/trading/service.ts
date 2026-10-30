@@ -1,5 +1,5 @@
 import Decimal from "decimal.js";
-import { and, desc, eq, gt } from "drizzle-orm";
+import { and, desc, eq, gt, inArray } from "drizzle-orm";
 import type { SessionUser } from "../auth/session";
 import { getConfig, HL_MAX_PERP_BUILDER_FEE_TENTHS_BP, type AppConfig } from "../config";
 import type { Db } from "../db/client";
@@ -16,7 +16,8 @@ import type { BotConfig } from "../bots/schema";
 import { tenthsBpToPercentString } from "../fees/rates";
 import { ApiError, badRequest, conflict, forbidden, notFound } from "../http";
 import { formatPerpPrice, formatPerpSize, newCloid } from "../hyperliquid/format";
-import type { HlGateway } from "../hyperliquid/gateway";
+import { HlRejectedError } from "../hyperliquid/errors";
+import type { HlGateway, HlOrderLookup } from "../hyperliquid/gateway";
 import { decryptAgentKey, generateAgent } from "./agent-keys";
 import { bi } from "../i18n";
 
@@ -330,8 +331,8 @@ export async function placeOrder(db: Db, hl: HlGateway, user: SessionUser, req: 
     })
     .returning();
 
+  const agentKey = decryptAgentKey(agent!.encryptedKey, agent!.agentAddress);
   try {
-    const agentKey = decryptAgentKey(agent!.encryptedKey, agent!.agentAddress);
     const [status] = await hl.placeOrders(
       agentKey,
       [
@@ -352,14 +353,81 @@ export async function placeOrder(db: Db, hl: HlGateway, user: SessionUser, req: 
     return saved;
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    const [saved] = await db
-      .update(orders)
-      .set({ status: "ERROR", error: message.slice(0, 500), updatedAt: new Date() })
-      .where(eq(orders.id, order.id))
-      .returning();
-    await db.insert(riskEvents).values({ userId: user.id, botId: ctx.botId ?? null, kind: "ORDER_SEND_FAILED", severity: "WARN", detail: { orderId: order.id, message } });
+    if (err instanceof HlRejectedError) {
+      const [saved] = await db
+        .update(orders)
+        .set({ status: "REJECTED", error: message.slice(0, 500), updatedAt: new Date() })
+        .where(eq(orders.id, order.id))
+        .returning();
+      return saved;
+    }
+    // No answer (timeout, network): the order may have reached Hyperliquid and filled.
+    // Look it up by cloid before deciding; never report "failed" for an order that may be live.
+    const found = await lookupOrder(hl, user.walletAddress, cloid, order.createdAt.getTime() - 60_000);
+    const update: Partial<typeof orders.$inferInsert> = found ?? {
+      status: "UNKNOWN",
+      error: `No response from Hyperliquid and the order isn't visible yet; its result is being checked. (${message})`.slice(0, 500),
+    };
+    const [saved] = await db.update(orders).set({ ...update, updatedAt: new Date() }).where(eq(orders.id, order.id)).returning();
+    await db.insert(riskEvents).values({
+      userId: user.id,
+      botId: ctx.botId ?? null,
+      kind: found ? "ORDER_RESPONSE_LOST" : "ORDER_RESULT_UNKNOWN",
+      severity: found ? "WARN" : "CRITICAL",
+      detail: { orderId: order.id, cloid, message, recovered: found?.status ?? null },
+    });
     return saved;
   }
+}
+
+/** Waits before each lookup of an order whose response was lost (it may still be in flight). Tests shorten it. */
+export const orderLookup = { delaysMs: [0, 800, 2000] };
+
+/** Hyperliquid's own record of an order, mapped to our order row. null = Hyperliquid doesn't know it (yet). */
+export async function lookupOrder(hl: HlGateway, wallet: string, cloid: string, sinceMs: number): Promise<Partial<typeof orders.$inferInsert> | null> {
+  for (const wait of orderLookup.delaysMs) {
+    if (wait) await new Promise((r) => setTimeout(r, wait));
+    const found = await hl.orderStatus(wallet, cloid as `0x${string}`).catch(() => null);
+    if (found) return fromLookup(hl, wallet, found, sinceMs);
+  }
+  return null;
+}
+
+async function fromLookup(hl: HlGateway, wallet: string, o: HlOrderLookup, sinceMs: number): Promise<Partial<typeof orders.$inferInsert>> {
+  if (o.status === "open" || o.status === "triggered") return { status: "RESTING", hlOrderId: o.oid, error: null };
+  const filled = Decimal.max(new Decimal(o.origSz).minus(o.sz), 0);
+  if (filled.gt(0)) {
+    // A market (IOC) order that filled partly ends "canceled" with the rest unfilled: what filled counts.
+    let avgPrice: string | null = null;
+    const fills = (await hl.userFillsByTime(wallet, sinceMs).catch(() => [])).filter((f) => f.oid === o.oid);
+    const size = fills.reduce((s, f) => s.plus(f.sz), new Decimal(0));
+    if (size.gt(0)) avgPrice = fills.reduce((s, f) => s.plus(new Decimal(f.px).mul(f.sz)), new Decimal(0)).div(size).toString();
+    return { status: "FILLED", hlOrderId: o.oid, filledSize: filled.toString(), avgPrice, error: null };
+  }
+  return { status: /rejected/i.test(o.status) ? "REJECTED" : "CANCELED", hlOrderId: o.oid, error: `Hyperliquid: ${o.status}` };
+}
+
+/** Orders left UNKNOWN (or stuck PENDING) by a lost response: ask Hyperliquid again. Runs from the engine cron. */
+export async function reconcileOrders(db: Db, hl: HlGateway, olderThanMs = 30_000) {
+  const stuck = await db
+    .select()
+    .from(orders)
+    .where(and(eq(orders.network, hl.network), inArray(orders.status, ["UNKNOWN", "PENDING"])))
+    .limit(50);
+  let resolved = 0;
+  for (const o of stuck) {
+    if (Date.now() - o.createdAt.getTime() < olderThanMs) continue;
+    const found = await hl.orderStatus(o.hlAddress, o.cloid as `0x${string}`).catch(() => null);
+    if (found) {
+      await db.update(orders).set({ ...(await fromLookup(hl, o.hlAddress, found, o.createdAt.getTime() - 60_000)), updatedAt: new Date() }).where(eq(orders.id, o.id));
+      resolved++;
+    } else if (Date.now() - o.createdAt.getTime() > 10 * 60_000) {
+      // Hyperliquid keeps every order it accepted; ten minutes on, an unknown cloid never reached it.
+      await db.update(orders).set({ status: "ERROR", error: "Never reached Hyperliquid (no order with this cloid).", updatedAt: new Date() }).where(eq(orders.id, o.id));
+      resolved++;
+    }
+  }
+  return resolved;
 }
 
 function interpretStatus(status: unknown): Partial<typeof orders.$inferInsert> {

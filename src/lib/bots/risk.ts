@@ -23,6 +23,18 @@ export function assessBotRisk(c: BotConfig, platformMaxFeeTenthsBp: number): { l
   }
   if (c.risk.stopLossPct > 50) block("STOP_LOSS_TOO_WIDE", bi("A bot with a stop loss wider than 50% can't be registered.", "손절 폭이 50%를 초과하면 등록할 수 없습니다."));
   if (c.risk.maxLeverage > 25) warn("HIGH_LEVERAGE", bi("Max leverage above 25x: the liquidation risk is very high.", "최대 레버리지 25배 초과: 강제청산 위험이 매우 높습니다."));
+  // The stop loss is a price move from entry, not a share of the margin: at L× a move of 100/L % uses up the position's margin.
+  const marginGone = 100 / c.risk.maxLeverage;
+  const stopBeyondMargin = c.risk.stopLossPct >= marginGone;
+  if (stopBeyondMargin) {
+    warn(
+      "STOP_BEYOND_MARGIN",
+      bi(
+        `The ${c.risk.stopLossPct}% stop loss is a price move from entry. At ${c.risk.maxLeverage}x a ${+marginGone.toFixed(2)}% move already uses up the position's margin (a ${c.risk.stopLossPct}% stop loses ${+(c.risk.stopLossPct * c.risk.maxLeverage).toFixed(0)}% of it), so the stop only triggers if the rest of the account covers the loss; otherwise the position is liquidated first. The engine skips entries the account can't cover.`,
+        `${c.risk.stopLossPct}% 손절은 진입가 대비 가격 변동입니다. ${c.risk.maxLeverage}배에서는 ${+marginGone.toFixed(2)}% 변동에 포지션 증거금이 모두 소진되며(${c.risk.stopLossPct}% 손절 시 증거금의 ${+(c.risk.stopLossPct * c.risk.maxLeverage).toFixed(0)}% 손실), 계좌의 나머지 자금이 손실을 감당하지 못하면 손절 전에 강제청산됩니다. 엔진은 계좌가 감당할 수 없는 진입을 건너뜁니다.`,
+      ),
+    );
+  }
   if (c.risk.dailyLossLimitUsd > c.risk.maxPositionUsd) {
     warn("DAILY_LOSS_ABOVE_POSITION", bi("The daily loss limit is larger than the max position size.", "일일 손실 한도가 최대 포지션 규모보다 큽니다."));
   }
@@ -44,7 +56,7 @@ export function assessBotRisk(c: BotConfig, platformMaxFeeTenthsBp: number): { l
   const warns = findings.filter((f) => f.severity === "WARN").length;
   let level: RiskLevel = "LOW";
   if (c.risk.maxLeverage > 10 || warns >= 1) level = "MEDIUM";
-  if (c.risk.maxLeverage > 25 || c.strategyType === "MARTINGALE" || warns >= 3) level = "HIGH";
+  if (c.risk.maxLeverage > 25 || c.strategyType === "MARTINGALE" || stopBeyondMargin || warns >= 3) level = "HIGH";
   if (blocks > 0 || c.risk.maxLeverage > 40) level = "EXTREME";
   return { level, findings };
 }

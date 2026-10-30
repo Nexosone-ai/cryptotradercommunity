@@ -90,4 +90,15 @@ describe("bot config validation and risk screen", () => {
     expect(r.level).toBe("EXTREME");
     expect(r.findings.map((f) => f.code)).toEqual(expect.arrayContaining(["MARTINGALE", "HIGH_LEVERAGE", "FEE_ABOVE_PLATFORM_CAP"]));
   });
+  it("a stop loss wider than the move that uses up the margin at max leverage is high risk (e.g. 20% at 25x)", () => {
+    const at = (maxLeverage: number, stopLossPct: number) =>
+      assessBotRisk(botConfigSchema.parse(validBotInput({ leverageMax: maxLeverage, risk: { ...validBotInput().risk, maxLeverage, stopLossPct } })), 50);
+    const martin = at(25, 20);
+    expect(martin.level).toBe("HIGH");
+    const finding = martin.findings.find((f) => f.code === "STOP_BEYOND_MARGIN")!;
+    expect(finding.severity).toBe("WARN");
+    expect(finding.message).toContain("At 25x a 4% move already uses up the position's margin (a 20% stop loses 500% of it)");
+    expect(at(5, 5).findings.map((f) => f.code)).not.toContain("STOP_BEYOND_MARGIN"); // 5% < 20%
+    expect(at(5, 5).level).toBe("LOW");
+  });
 });

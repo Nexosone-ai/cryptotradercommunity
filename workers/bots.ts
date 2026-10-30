@@ -12,6 +12,7 @@ import { getConfig } from "@/lib/config";
 import { runCopyTick } from "@/lib/engine/copy";
 import { getDb } from "@/lib/db/client";
 import { engineAvailability, retryStaleSignals } from "@/lib/engine/execute";
+import { recordHeartbeat, runSafetyTick } from "@/lib/engine/guard";
 import { runTrendTick } from "@/lib/engine/trend";
 import { getHlGateway } from "@/lib/hyperliquid/gateway";
 
@@ -35,10 +36,13 @@ async function main() {
   console.log(`[bots] started network=${cfg.network} interval=${INTERVAL_MS}ms`);
   while (!stopping) {
     try {
+      await recordHeartbeat(db, hl.network);
       const emitted = await runTrendTick(db, hl);
       const copied = await runCopyTick(db, hl);
       const retried = await retryStaleSignals(db, hl);
-      if (emitted.length || copied.length || retried) console.log(`[bots] ${new Date().toISOString()}`, { emitted, copied, retried });
+      const safety = await runSafetyTick(db, hl);
+      if (emitted.length || copied.length || retried || safety.orders || safety.positions.reprotected || safety.positions.unprotected)
+        console.log(`[bots] ${new Date().toISOString()}`, { emitted, copied, retried, safety });
     } catch (err) {
       console.error("[bots] tick failed", err instanceof Error ? err.message : err);
     }

@@ -1,8 +1,10 @@
 import { and, desc, eq, ilike, inArray, or, sql } from "drizzle-orm";
+import { getConfig } from "../config";
 import type { Db } from "../db/client";
 import { bots, botSubscriptions } from "../db/schema";
 import { getBotMetrics, type BotMetrics } from "../performance/metrics";
 import { PUBLIC_STATUSES } from "./service";
+import { assessBotRisk } from "./risk";
 import type { BotConfig } from "./schema";
 
 export interface BotListFilter {
@@ -64,7 +66,8 @@ export async function listPublicBots(db: Db, f: BotListFilter = {}): Promise<Pub
         strategyType: bot.strategyType,
         ownerWalletAddress: bot.ownerWalletAddress,
         feeTenthsBp: bot.feeTenthsBp,
-        riskLevel: bot.riskLevel,
+        // Rated with the current rules, so a stricter rule shows on bots registered before it.
+        riskLevel: assessBotRisk(config, getConfig().platformMaxFeeTenthsBp).level,
         markets: config.markets,
         maxLeverage: config.risk.maxLeverage,
         liveSince: bot.liveSince?.toISOString() ?? null,

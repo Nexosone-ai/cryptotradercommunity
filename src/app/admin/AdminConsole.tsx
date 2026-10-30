@@ -667,13 +667,14 @@ function Policy() {
 
 function SystemTab() {
   const { t, L } = useI18n();
-  const { data, error } = useLoad<{ status: Record<string, unknown>; riskEvents: { id: string; kind: string; severity: string; createdAt: string; detail: unknown }[] }>(
+  const { data, error } = useLoad<{ status: Record<string, unknown>; engine: EngineHealth; riskEvents: { id: string; kind: string; severity: string; createdAt: string; detail: unknown }[] }>(
     "/api/admin/system",
   );
   if (error) return <Notice tone="down">{L(error)}</Notice>;
   if (!data) return <p className="text-sm text-muted">{t("Loading…", "불러오는 중…")}</p>;
   return (
     <div className="space-y-6">
+      <EngineHealthCard h={data.engine} />
       <Card>
         <h2 className="mb-3 font-semibold">{t("System status", "시스템 상태")}</h2>
         <pre className="num overflow-x-auto text-xs text-muted">{JSON.stringify(data.status, null, 2)}</pre>
@@ -685,7 +686,7 @@ function SystemTab() {
         ) : (
           <ul className="num space-y-1 text-xs">
             {data.riskEvents.map((e) => (
-              <li key={e.id} className={e.severity === "WARN" ? "text-warn" : "text-muted"}>
+              <li key={e.id} className={e.severity === "CRITICAL" ? "text-down" : e.severity === "WARN" ? "text-warn" : "text-muted"}>
                 {dateTime(e.createdAt)} · {e.kind} · {JSON.stringify(e.detail)}
               </li>
             ))}
@@ -693,6 +694,69 @@ function SystemTab() {
         )}
       </Card>
     </div>
+  );
+}
+
+interface EngineHealth {
+  network: string;
+  lastEngineRunAt: string | null;
+  lastEngineRunMinutesAgo: number | null;
+  lastSignal: { createdAt: string; status: string; action: string; coin: string; source: string; botName: string } | null;
+  botOrders24h: { filled: number; resting: number; rejected: number; error: number; unknown: number; canceled: number };
+  openBotPositions: number;
+  positionsWithoutStop: number;
+  lastSettlementSyncAt: string | null;
+  lastSettlementSyncMinutesAgo: number | null;
+  criticalEvents24h: number;
+}
+
+function EngineHealthCard({ h }: { h: EngineHealth }) {
+  const engineAge = h.lastEngineRunMinutesAgo;
+  const rows: { label: string; value: string; tone: "up" | "warn" | "down" | "muted" }[] = [
+    {
+      label: "Last engine run",
+      value: h.lastEngineRunAt ? `${dateTime(h.lastEngineRunAt)} (${engineAge} min ago)` : "Never recorded",
+      tone: engineAge === null || engineAge > 3 ? "down" : "up",
+    },
+    {
+      label: "Last signal",
+      value: h.lastSignal ? `${dateTime(h.lastSignal.createdAt)} · ${h.lastSignal.botName} · ${h.lastSignal.action} ${h.lastSignal.coin} · ${h.lastSignal.status}` : "None yet",
+      tone: h.lastSignal?.status === "FAILED" ? "down" : "muted",
+    },
+    {
+      label: "Bot orders, 24h",
+      value: `${h.botOrders24h.filled} filled · ${h.botOrders24h.resting} resting (stops) · ${h.botOrders24h.rejected} rejected · ${h.botOrders24h.error} error · ${h.botOrders24h.unknown} result unknown`,
+      tone: h.botOrders24h.unknown > 0 ? "down" : h.botOrders24h.rejected + h.botOrders24h.error > 0 ? "warn" : "up",
+    },
+    {
+      label: "Open bot positions",
+      value: `${h.openBotPositions} · ${h.positionsWithoutStop} without a stop loss`,
+      tone: h.positionsWithoutStop > 0 ? "down" : "up",
+    },
+    {
+      label: "Last settlement sync",
+      value: h.lastSettlementSyncAt ? `${dateTime(h.lastSettlementSyncAt)} (${h.lastSettlementSyncMinutesAgo} min ago)` : "Never",
+      tone: "muted",
+    },
+    { label: "Critical risk events, 24h", value: String(h.criticalEvents24h), tone: h.criticalEvents24h > 0 ? "down" : "up" },
+  ];
+  const color = { up: "text-up", warn: "text-warn", down: "text-down", muted: "text-text" } as const;
+  return (
+    <Card>
+      <h2 className="mb-3 font-semibold">Engine health ({h.network})</h2>
+      <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-[max-content_1fr]" data-testid="engine-health">
+        {rows.map((r) => (
+          <div key={r.label} className="contents">
+            <dt className="text-muted">{r.label}</dt>
+            <dd className={`num ${color[r.tone]}`}>{r.value}</dd>
+          </div>
+        ))}
+      </dl>
+      <p className="mt-3 text-xs text-faint">
+        The engine runs every minute. Each run also asks Hyperliquid about orders left without an answer and checks that every bot position still has its
+        stop loss; a missing stop is placed again, or the position is closed.
+      </p>
+    </Card>
   );
 }
 

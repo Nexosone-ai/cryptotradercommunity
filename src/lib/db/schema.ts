@@ -225,7 +225,7 @@ export const orders = pgTable("orders", {
   filledSize: text("filled_size"),
   avgPrice: text("avg_price"),
   builderFeeTenthsBp: integer("builder_fee_tenths_bp").notNull(),
-  /** PENDING | RESTING | FILLED | CANCELED | REJECTED | ERROR */
+  /** PENDING | RESTING | FILLED | CANCELED | REJECTED | ERROR | UNKNOWN (sent, no answer yet: reconcileOrders looks it up) */
   status: text("status").notNull(),
   error: text("error"),
   createdAt: createdAt(),

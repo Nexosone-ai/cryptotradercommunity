@@ -12,7 +12,9 @@ import { recordSignal, webhookTokenMatches, type TargetAction } from "@/lib/engi
 import { runTrendTick } from "@/lib/engine/trend";
 import { subscriberReadiness } from "@/lib/engine/readiness";
 import type { HlFill, HlOrderWire } from "@/lib/hyperliquid/gateway";
-import { prepareAgent, verifyAgent } from "@/lib/trading/service";
+import { orderLookup, prepareAgent, reconcileOrders, verifyAgent } from "@/lib/trading/service";
+import { HlRejectedError } from "@/lib/hyperliquid/errors";
+import { guardPositions } from "@/lib/engine/guard";
 import { fakeHl } from "../helpers/fake-hl";
 import { makeUser, testDb, validBotInput } from "../helpers/db";
 
@@ -42,20 +44,49 @@ function exchange(opts: { failStops?: boolean } = {}) {
   const leverage: number[] = [];
   const walletOfAgent = new Map<string, string>(); // agent address → user wallet
   const walletFor = (agentKey: string) => walletOfAgent.get(privateKeyToAccount(agentKey as `0x${string}`).address.toLowerCase())!;
+  /** Orders Hyperliquid "knows" (info orderStatus), by cloid. */
+  const known = new Map<string, { status: string; oid: number; origSz: string; sz: string }>();
+  /** Knobs for failure tests; each can change between signals. */
+  const knobs = {
+    failStops: Boolean(opts.failStops),
+    /** Reduce-only market orders are refused (the safety close fails). */
+    failCloses: false,
+    /** Share of a market order that fills (IOC: the rest is canceled). */
+    fillRatio: 1,
+    /** The order executes but its response never arrives. */
+    dropResponse: false,
+    /** orderStatus doesn't know the order (yet). */
+    hideFromLookup: false,
+    accountValue: "1000",
+  };
   const hl = fakeHl({
-    placeOrders: async (agentKey, list: HlOrderWire[]) =>
-      list.map((o) => {
+    placeOrders: async (agentKey, list: HlOrderWire[]) => {
+      const statuses = list.map((o) => {
         hl.calls.push({ orders: [o], agentKey });
-        if ("trigger" in o.t) return opts.failStops ? { error: "Stop rejected" } : { resting: { oid: 7000 + hl.calls.length } };
+        const oid = 5000 + hl.calls.length;
+        if ("trigger" in o.t) {
+          if (knobs.failStops) return { error: "Stop rejected" };
+          known.set(o.c, { status: "open", oid, origSz: o.s, sz: o.s });
+          return { resting: { oid } };
+        }
+        if (o.r && knobs.failCloses) return { error: "Reduce only order would increase position" };
         const coin = o.a === 0 ? "BTC" : "ETH";
         const wallet = walletFor(agentKey);
         const book = positions.get(wallet) ?? new Map<string, Decimal>();
         positions.set(wallet, book);
-        book.set(coin, (book.get(coin) ?? new Decimal(0)).plus(o.b ? o.s : new Decimal(o.s).neg()));
-        return { filled: { oid: 5000 + hl.calls.length, totalSz: o.s, avgPx: coin === "BTC" ? "80000" : "2400" } };
-      }),
+        const sz = new Decimal(o.s).mul(knobs.fillRatio).toDecimalPlaces(5, Decimal.ROUND_DOWN);
+        book.set(coin, (book.get(coin) ?? new Decimal(0)).plus(o.b ? sz : sz.neg()));
+        if (!knobs.hideFromLookup) known.set(o.c, { status: sz.eq(o.s) ? "filled" : "canceled", oid, origSz: o.s, sz: new Decimal(o.s).minus(sz).toString() });
+        return { filled: { oid, totalSz: sz.toString(), avgPx: coin === "BTC" ? "80000" : "2400" } };
+      });
+      if (knobs.dropResponse) throw new Error("fetch failed: socket hang up");
+      return statuses;
+    },
+    orderStatus: async (_user, cloid) => known.get(cloid) ?? null,
+    openOrders: async () => [...known.entries()].filter(([, o]) => o.status === "open").map(([cloid]) => ({ cloid })),
     cancelByCloid: async (_k, _a, cloid) => {
       canceled.push(cloid);
+      known.delete(cloid);
     },
     updateLeverage: async (_k, _a, lev) => {
       leverage.push(lev);
@@ -63,7 +94,8 @@ function exchange(opts: { failStops?: boolean } = {}) {
     clearinghouseState: async (user: string) => {
       const book = positions.get(user.toLowerCase());
       return {
-        marginSummary: { accountValue: "1000" },
+        marginSummary: { accountValue: knobs.accountValue },
+        crossMaintenanceMarginUsed: "0",
         assetPositions: [...(book?.entries() ?? [])].filter(([, s]) => !s.isZero()).map(([coin, s]) => ({ position: { coin, szi: s.toString() } })),
       };
     },
@@ -74,7 +106,7 @@ function exchange(opts: { failStops?: boolean } = {}) {
     walletOfAgent.set(address.toLowerCase(), user.toLowerCase());
     addAgent(user, address);
   };
-  return { hl, positions, fills, canceled, leverage };
+  return { hl, positions, fills, canceled, leverage, known, knobs };
 }
 
 type Ex = ReturnType<typeof exchange>;
@@ -309,5 +341,130 @@ describe("bot execution engine", () => {
     const [row] = await db.select().from(bots).where(eq(bots.id, bot.id));
     const items = await subscriberReadiness(db, ex.hl, trader, row, sub);
     expect(items.find((i) => i.key === "funds")).toMatchObject({ ok: true, label: "Hyperliquid account value: 48.75 USDC" });
+  });
+});
+
+describe("order safety: lost responses, partial closes, failed stops", () => {
+  let db: Db;
+  let ex: Ex;
+  beforeAll(() => {
+    orderLookup.delaysMs = [0];
+  });
+  beforeEach(async () => {
+    db = await testDb();
+    ex = exchange();
+  });
+  const positionsOf = (subId: string) => db.select().from(botPositions).where(eq(botPositions.subscriptionId, subId));
+  const ordersOf = (subId: string) => db.select().from(orders).where(eq(orders.subscriptionId, subId)).orderBy(orders.createdAt);
+  const eventsOf = (kind: string) => db.select().from(riskEvents).where(eq(riskEvents.kind, kind));
+
+  it("a lost response is looked up by cloid: the fill counts and the stop is still placed", async () => {
+    const { bot } = await liveBot(db);
+    const { sub } = await subscriber(db, ex, bot.id, 100);
+    ex.knobs.dropResponse = true;
+    const s = await signal(db, ex, bot.id, "LONG");
+    expect(s.summary).toMatchObject({ done: 1, failed: 0 });
+    const [open, stop] = await ordersOf(sub.id);
+    expect(open).toMatchObject({ status: "FILLED", filledSize: "0.00125" });
+    expect(stop).toMatchObject({ status: "RESTING", orderType: "STOP_MARKET" });
+    const [pos] = await positionsOf(sub.id);
+    expect(pos).toMatchObject({ side: "LONG", size: "0.00125", stopCloid: stop.cloid });
+    expect(await eventsOf("ORDER_RESPONSE_LOST")).toHaveLength(2);
+  });
+
+  it("an order Hyperliquid can't find yet stays UNKNOWN; the engine reads the position, protects it, and the cron settles the order", async () => {
+    const { bot } = await liveBot(db);
+    const { sub } = await subscriber(db, ex, bot.id, 100);
+    ex.knobs.dropResponse = true;
+    ex.knobs.hideFromLookup = true;
+    await signal(db, ex, bot.id, "LONG");
+    const [exec] = await executionsFor(db, sub.id);
+    expect(exec).toMatchObject({ status: "DONE", reason: expect.stringContaining("confirmed from the position on Hyperliquid") });
+    const [open] = await ordersOf(sub.id);
+    expect(open.status).toBe("UNKNOWN");
+    const [unknown] = await eventsOf("ORDER_RESULT_UNKNOWN");
+    expect(unknown.severity).toBe("CRITICAL");
+    expect((await positionsOf(sub.id))[0]).toMatchObject({ size: "0.00125", stopCloid: expect.any(String) });
+
+    ex.known.set(open.cloid, { status: "filled", oid: 99, origSz: "0.00125", sz: "0" });
+    expect(await reconcileOrders(db, ex.hl, 0)).toBe(1);
+    expect((await ordersOf(sub.id))[0]).toMatchObject({ status: "FILLED", filledSize: "0.00125", hlOrderId: 99 });
+  });
+
+  it("a refusal from Hyperliquid is REJECTED, not unknown", async () => {
+    const { bot } = await liveBot(db);
+    const { sub } = await subscriber(db, ex, bot.id, 100);
+    ex.hl.placeOrders = async () => {
+      throw new HlRejectedError("Insufficient margin to place order.");
+    };
+    const s = await signal(db, ex, bot.id, "LONG");
+    expect(s.summary).toMatchObject({ failed: 1 });
+    expect((await ordersOf(sub.id))[0]).toMatchObject({ status: "REJECTED", error: expect.stringContaining("Insufficient margin") });
+    expect(await eventsOf("ORDER_RESULT_UNKNOWN")).toHaveLength(0);
+    expect(await positionsOf(sub.id)).toHaveLength(0);
+  });
+
+  it("a partial close keeps the rest tracked with its stop and opens nothing new", async () => {
+    const { bot } = await liveBot(db);
+    const { sub } = await subscriber(db, ex, bot.id, 100);
+    await signal(db, ex, bot.id, "LONG");
+    const { stopCloid } = (await positionsOf(sub.id))[0];
+    ex.knobs.fillRatio = 0.4;
+    const s = await signal(db, ex, bot.id, "SHORT");
+    expect(s.summary).toMatchObject({ failed: 1 });
+    expect((await executionsFor(db, sub.id)).find((e) => e.status === "FAILED")!.reason).toContain("closed 0.0005 of 0.00125 BTC; 0.00075 BTC is still open and its stop loss stays in place");
+    expect((await positionsOf(sub.id))[0]).toMatchObject({ side: "LONG", size: "0.00075", stopCloid });
+    expect(ex.canceled).not.toContain(stopCloid);
+    expect(ex.hl.calls).toHaveLength(3); // open, stop, partial close — no short
+  });
+
+  it("if the stop and the safety close both fail: tracked without a stop, critical event, new entries wait, the guard protects it", async () => {
+    const { bot } = await liveBot(db, { markets: ["BTC-PERP", "ETH-PERP"] });
+    const { sub } = await subscriber(db, ex, bot.id, 100);
+    ex.knobs.failStops = true;
+    ex.knobs.failCloses = true;
+    await signal(db, ex, bot.id, "LONG");
+    expect((await executionsFor(db, sub.id))[0].reason).toContain("0.00125 BTC is still open without a stop");
+    expect((await positionsOf(sub.id))[0]).toMatchObject({ coin: "BTC", size: "0.00125", stopCloid: null });
+    expect((await eventsOf("UNPROTECTED_POSITION"))[0].severity).toBe("CRITICAL");
+
+    // Another market's entry waits while BTC is unprotected.
+    ex.knobs.failStops = false;
+    ex.knobs.failCloses = false;
+    const eth = await signal(db, ex, bot.id, "LONG", "ETH");
+    expect(eth.summary).toMatchObject({ skipped: 1 });
+    expect((await executionsFor(db, sub.id)).find((e) => e.status === "SKIPPED")!.reason).toContain("without a stop loss");
+
+    expect(await guardPositions(db, ex.hl)).toMatchObject({ checked: 1, reprotected: 1 });
+    expect((await positionsOf(sub.id))[0].stopCloid).toEqual(expect.any(String));
+  });
+
+  it("the guard re-places a stop that disappeared and stops tracking a position closed on Hyperliquid", async () => {
+    const { bot } = await liveBot(db);
+    const { trader, sub } = await subscriber(db, ex, bot.id, 100);
+    await signal(db, ex, bot.id, "LONG");
+    const { stopCloid } = (await positionsOf(sub.id))[0];
+    expect(await guardPositions(db, ex.hl)).toMatchObject({ checked: 1, reprotected: 0 });
+
+    ex.known.delete(stopCloid!); // canceled on Hyperliquid
+    expect(await guardPositions(db, ex.hl)).toMatchObject({ reprotected: 1 });
+    const [pos] = await positionsOf(sub.id);
+    expect(pos.stopCloid).not.toBe(stopCloid);
+    expect(ex.hl.calls.at(-1)!.orders[0]).toMatchObject({ b: false, s: "0.00125", r: true, t: { trigger: { triggerPx: "76000" } } });
+
+    ex.positions.get(trader.walletAddress.toLowerCase())!.set("BTC", new Decimal(0)); // the stop fired
+    expect(await guardPositions(db, ex.hl)).toMatchObject({ closed: 1 });
+    expect(await positionsOf(sub.id)).toHaveLength(0);
+  });
+
+  it("skips an entry when the account would be liquidated before the stop loss", async () => {
+    const { bot } = await liveBot(db);
+    const { sub } = await subscriber(db, ex, bot.id, 100);
+    ex.knobs.accountValue = "6"; // a 5% stop on 100 USDC loses 5; 1 USDC left is under the maintenance margin buffer
+    const s = await signal(db, ex, bot.id, "LONG");
+    expect(s.summary).toMatchObject({ skipped: 1 });
+    expect((await executionsFor(db, sub.id))[0].reason).toContain("liquidated before the stop triggers");
+    expect(ex.hl.calls).toHaveLength(0);
+    expect(await eventsOf("STOP_BEYOND_LIQUIDATION")).toHaveLength(1);
   });
 });

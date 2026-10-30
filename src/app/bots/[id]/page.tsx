@@ -90,7 +90,7 @@ export default async function BotDetail({ params, searchParams }: PageProps<"/bo
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-2xl font-bold tracking-tight">{bot.name}</h1>
             <VerificationBadge v={m.verification} />
-            <RiskBadge level={bot.riskLevel} />
+            <RiskBadge level={risk.level} />
             {bot.status !== "LIVE" && <Badge tone="warn">{L(STATUS_LABELS[bot.status])}</Badge>}
           </div>
           <p className="mt-2 max-w-3xl text-muted">{bot.summary}</p>
@@ -211,6 +211,24 @@ export default async function BotDetail({ params, searchParams }: PageProps<"/bo
               <div>
                 <dt className="text-muted">{t("Execution", "실행 방식")}</dt>
                 <dd>{L(EXECUTION_LABELS[config.executionMode])}</dd>
+              </div>
+              <div className="col-span-2 sm:col-span-3">
+                <dt className="text-muted">{t("What places the orders", "실제 주문을 내는 규칙")}</dt>
+                <dd data-testid="strategy-runs">
+                  {trendBot
+                    ? t(
+                        `EMA(${TREND_TEMPLATE.fast}) / EMA(${TREND_TEMPLATE.slow}) crossover on closed ${config.timeframe} candles (platform Trend Following template). Only this rule trades; the bot's name and description don't change it.`,
+                        `마감된 ${config.timeframe} 캔들의 EMA(${TREND_TEMPLATE.fast}) / EMA(${TREND_TEMPLATE.slow}) 교차 (플랫폼 추세추종 템플릿). 이 규칙만 거래하며, 봇 이름·설명은 실행 전략을 바꾸지 않습니다.`,
+                      )
+                    : copyBot
+                      ? t("The leader's own Hyperliquid positions, copied to each follower every minute.", "리더의 Hyperliquid 포지션을 매분 팔로워에게 복사합니다.")
+                      : webhookBot
+                        ? t(
+                            "Signals the operator sends from their own system (webhook). The platform runs the orders and risk limits but can't see or verify the strategy logic.",
+                            "운영자가 자체 시스템에서 보내는 신호(Webhook). 플랫폼은 주문과 위험 한도를 실행하지만 전략 로직은 확인·검증할 수 없습니다.",
+                          )
+                        : t("Nothing yet: this execution mode isn't automated, so the bot places no orders.", "아직 없음: 이 실행 방식은 자동화되지 않아 봇이 주문을 내지 않습니다.")}
+                </dd>
               </div>
             </dl>
             <p className="mt-4 whitespace-pre-wrap text-sm leading-relaxed text-text/90">{config.description}</p>

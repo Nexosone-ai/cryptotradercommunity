@@ -36,6 +36,7 @@ export function fakeHl(overrides: Partial<HlGateway> = {}) {
     spotBalances: async () => [],
     accountMode: async () => "default" as const,
     userFills: async () => [],
+    orderStatus: async () => null,
     candles: async () => [],
     marketOverview: async () => [],
     ...overrides,

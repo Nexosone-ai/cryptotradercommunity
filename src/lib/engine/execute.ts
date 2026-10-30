@@ -9,7 +9,17 @@ import { ApiError } from "../http";
 import type { HlGateway } from "../hyperliquid/gateway";
 import { decryptAgentKey } from "../trading/agent-keys";
 import { activeAgent, placeOrder } from "../trading/service";
-import { cancelStop, message, positionSize, realizedPnlToday, type Outcome } from "./common";
+import {
+  cancelStop,
+  hasUnprotectedPosition,
+  liquidationBeforeStop,
+  message,
+  orderEffect,
+  positionSize,
+  protect,
+  realizedPnlToday,
+  type Outcome,
+} from "./common";
 import { copyToFollower } from "./copy";
 import type { TargetAction } from "./signals";
 
@@ -50,7 +60,7 @@ export function applyDirection(action: TargetAction, direction: BotConfig["direc
 const LOCK_TTL_MS = 90_000;
 const LOCK_WAIT_MS = 40_000;
 
-async function acquireLock(db: Db, key: string, holder: string): Promise<boolean> {
+export async function acquireLock(db: Db, key: string, holder: string): Promise<boolean> {
   const expiresAt = new Date(Date.now() + LOCK_TTL_MS);
   const rows = await db
     .insert(engineLocks)
@@ -60,7 +70,7 @@ async function acquireLock(db: Db, key: string, holder: string): Promise<boolean
   return rows.length > 0 && rows[0].holder === holder;
 }
 
-async function releaseLock(db: Db, key: string, holder: string) {
+export async function releaseLock(db: Db, key: string, holder: string) {
   await db.delete(engineLocks).where(and(eq(engineLocks.key, key), eq(engineLocks.holder, holder)));
 }
 
@@ -173,20 +183,35 @@ async function moveToTarget(db: Db, hl: HlGateway, bot: Bot, config: BotConfig, 
   if (held && held.side === target) return { status: "SKIPPED", reason: `Already ${target.toLowerCase()} ${held.size} ${coin}.`, orderIds };
   if (!held && target === "FLAT") return { status: "SKIPPED", reason: "No bot position to close.", orderIds };
 
-  // 1. Close the bot's opposite position.
+  // 1. Close the bot's opposite position. Only what actually closed counts: a partial
+  // close keeps the rest tracked with its stop, and nothing new opens.
   let closedNote = "";
+  let before = actual;
   if (held && tracked) {
     const close = await placeOrder(db, hl, user, { coin, isBuy: held.side === "SHORT", size: held.size.toString(), orderType: "MARKET", reduceOnly: true, ...mainnet }, ctx);
     orderIds.push(close.id);
-    if (close.status !== "FILLED") return { status: "FAILED", reason: `Close order ${close.status}${close.error ? `: ${close.error}` : ""}`, orderIds };
+    const closed = Decimal.min(await orderEffect(hl, user.walletAddress, coin, close, held.side, actual, true), held.size);
+    const left = held.size.minus(closed);
+    const status = `${close.status}${close.error ? `: ${close.error}` : ""}`;
+    if (left.gt(0)) {
+      await db.update(botPositions).set({ size: left.toString() }).where(eq(botPositions.id, tracked.id));
+      const kept = tracked.stopCloid ? "its stop loss stays in place" : "it has no stop loss";
+      return closed.isZero()
+        ? { status: "FAILED", reason: `Close order ${status}; the ${held.side.toLowerCase()} ${held.size} ${coin} is still open and ${kept}.`, orderIds }
+        : { status: "FAILED", reason: `Close order ${status}: closed ${closed} of ${held.size} ${coin}; ${left} ${coin} is still open and ${kept}.`, orderIds };
+    }
     if (tracked.stopCloid) await cancelStop(db, hl, user, coin, tracked.stopCloid);
     await db.delete(botPositions).where(eq(botPositions.id, tracked.id));
-    closedNote = `Closed ${held.side.toLowerCase()} ${close.filledSize ?? held.size} ${coin}. `;
+    closedNote = `Closed ${held.side.toLowerCase()} ${closed} ${coin}. `;
     if (target === "FLAT") return { status: "DONE", reason: closedNote.trim(), orderIds };
+    before = await positionSize(hl, user.walletAddress, coin);
   }
 
   // 2. Open the new position.
   if (!sub.orderUsd) return { status: "SKIPPED", reason: `${closedNote}No amount per trade is set for this subscription.`, orderIds };
+  if (await hasUnprotectedPosition(db, sub.id)) {
+    return { status: "SKIPPED", reason: `${closedNote}A bot position is open without a stop loss; no new positions until it is protected or closed.`, orderIds };
+  }
   const orderUsd = Decimal.min(sub.orderUsd, config.risk.maxOrderUsd);
   const pnl = await realizedPnlToday(db, hl, user.walletAddress, sub.id);
   if (pnl.lte(-config.risk.dailyLossLimitUsd)) {
@@ -203,57 +228,42 @@ async function moveToTarget(db: Db, hl: HlGateway, bot: Bot, config: BotConfig, 
       .updateLeverage(decryptAgentKey(agent.encryptedKey, agent.agentAddress), asset.index, Math.min(config.risk.maxLeverage, asset.maxLeverage))
       .catch((err) => db.insert(riskEvents).values({ userId: user.id, botId: bot.id, kind: "LEVERAGE_UPDATE_FAILED", severity: "INFO", detail: { message: message(err) } }));
   }
-  const open = await placeOrder(
-    db,
-    hl,
-    user,
-    { coin, isBuy: target === "LONG", size: orderUsd.div(mid).toString(), orderType: "MARKET", ...mainnet },
-    ctx,
-  );
+  const side = target as "LONG" | "SHORT";
+  const liquidation = await liquidationBeforeStop(hl, user.walletAddress, orderUsd, config.risk.stopLossPct, asset.maxLeverage);
+  if (liquidation) {
+    await db.insert(riskEvents).values({ userId: user.id, botId: bot.id, kind: "STOP_BEYOND_LIQUIDATION", severity: "WARN", detail: { coin, orderUsd: orderUsd.toString(), stopLossPct: config.risk.stopLossPct } });
+    return { status: "SKIPPED", reason: `${closedNote}${liquidation}`, orderIds };
+  }
+  const open = await placeOrder(db, hl, user, { coin, isBuy: side === "LONG", size: orderUsd.div(mid).toString(), orderType: "MARKET", ...mainnet }, ctx);
   orderIds.push(open.id);
-  if (open.status !== "FILLED" || !open.filledSize || new Decimal(open.filledSize).lte(0)) {
-    return { status: "FAILED", reason: `${closedNote}Open order ${open.status}${open.error ? `: ${open.error}` : ""}`, orderIds };
-  }
+  // With no answer the order may still have filled: the position on Hyperliquid decides.
+  const filled = await orderEffect(hl, user.walletAddress, coin, open, side, before, false);
+  if (filled.lte(0)) return { status: "FAILED", reason: `${closedNote}Open order ${open.status}${open.error ? `: ${open.error}` : ""}`, orderIds };
   const entry = new Decimal(open.avgPrice ?? mid);
+  const recovered = open.status === "FILLED" ? "" : ` (no order response; the fill was confirmed from the position on Hyperliquid)`;
 
-  // 3. Protective stop on Hyperliquid. No stop → no position (fail closed).
-  const sl = new Decimal(config.risk.stopLossPct).div(100);
-  const trigger = target === "LONG" ? entry.mul(new Decimal(1).minus(sl)) : entry.mul(sl.plus(1));
-  let stopCloid: string | null = null;
-  let stopError = "";
-  try {
-    const stop = await placeOrder(
-      db,
-      hl,
-      user,
-      { coin, isBuy: target === "SHORT", size: open.filledSize, orderType: "STOP_MARKET", triggerPrice: trigger.toString(), reduceOnly: true, ...mainnet },
-      ctx,
-    );
-    orderIds.push(stop.id);
-    if (stop.status === "RESTING") stopCloid = stop.cloid;
-    else stopError = `${stop.status}${stop.error ? `: ${stop.error}` : ""}`;
-  } catch (err) {
-    stopError = message(err);
-  }
-  if (!stopCloid) {
-    const flatten = await placeOrder(db, hl, user, { coin, isBuy: target === "SHORT", size: open.filledSize, orderType: "MARKET", reduceOnly: true, ...mainnet }, ctx).catch(() => null);
-    if (flatten) orderIds.push(flatten.id);
-    await db.insert(riskEvents).values({ userId: user.id, botId: bot.id, kind: "STOP_LOSS_FAILED", severity: "WARN", detail: { coin, stopError, flattened: flatten?.status ?? "ERROR" } });
-    return { status: "FAILED", reason: `${closedNote}Stop loss couldn't be placed (${stopError}); the new position was closed for safety.`, orderIds };
+  // 3. Protective stop on Hyperliquid. No stop → the position is closed (fail closed).
+  const stop = await protect(db, hl, user, { botId: bot.id, coin, side, size: filled, entry, stopLossPct: config.risk.stopLossPct }, orderIds);
+  if (!stop.ok) {
+    // Whatever the safety close left open stays tracked, without a stop: the guard retries it and new entries wait.
+    if (stop.remaining.gt(0)) {
+      await db.insert(botPositions).values({ subscriptionId: sub.id, coin, side, size: stop.remaining.toString(), entryPrice: entry.toString(), stopCloid: null, openedAt: new Date() });
+    }
+    return { status: "FAILED", reason: `${closedNote}${stop.reason}`, orderIds };
   }
 
   await db.insert(botPositions).values({
     subscriptionId: sub.id,
     coin,
-    side: target,
-    size: open.filledSize,
+    side,
+    size: filled.toString(),
     entryPrice: entry.toString(),
-    stopCloid,
+    stopCloid: stop.cloid,
     openedAt: new Date(),
   });
   return {
     status: "DONE",
-    reason: `${closedNote}Opened ${target.toLowerCase()} ${open.filledSize} ${coin} at ${entry.toString()}; stop loss at ${trigger.toSignificantDigits(6).toString()}.`,
+    reason: `${closedNote}Opened ${side.toLowerCase()} ${filled} ${coin} at ${entry.toString()}${recovered}; stop loss at ${stop.trigger}.`,
     orderIds,
   };
 }
