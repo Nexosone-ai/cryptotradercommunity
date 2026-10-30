@@ -108,3 +108,49 @@ describe("money and rates", () => {
     expect(e.totalTakerUsd).toBe("6.500000");
   });
 });
+
+describe("builder fee split — wholesale partner + affiliate", () => {
+  const POLICY: FeePolicyShares = { botOwnerSharePpm: 700_000, platformShareOfPoolPpm: 300_000, tier1ShareOfPartnerPoolPpm: 600_000 };
+  const sum = (lines: { amountE8: bigint }[]) => lines.reduce((s, l) => s + l.amountE8, 0n);
+  const paid = (r: ReturnType<typeof splitBuilderFee>, userId: string) =>
+    formatUsdcE8(r.lines.filter((l) => "userId" in l && l.userId === userId).reduce((s, l) => s + l.amountE8, 0n));
+  const platform = (r: ReturnType<typeof splitBuilderFee>) =>
+    formatUsdcE8(r.lines.filter((l) => l.account === "PLATFORM_NET_REVENUE").reduce((s, l) => s + l.amountE8, 0n));
+  const base = { revenueE8: usdc("100"), policy: POLICY, botOwnerUserId: "operator" };
+
+  it("affiliate's client, wholesaler keeps 10 points: 70 / 9 / wholesaler 10 / affiliate 11", () => {
+    const r = splitBuilderFee({ ...base, tier1PartnerUserId: "aff", tier2PartnerUserId: "ws", wholesalerPortionPpm: 100_000 });
+    expect([paid(r, "operator"), platform(r), paid(r, "ws"), paid(r, "aff")]).toEqual(["70.00", "9.00", "10.00", "11.00"]);
+    expect(sum(r.lines)).toBe(usdc("100"));
+  });
+
+  it("the wholesaler's own client: the wholesaler gets all 21", () => {
+    const r = splitBuilderFee({ ...base, tier1PartnerUserId: null, tier2PartnerUserId: "ws", wholesalerPortionPpm: 100_000 });
+    expect([paid(r, "ws"), platform(r)]).toEqual(["21.00", "9.00"]);
+  });
+
+  it("no partner: the whole 30 goes to the platform, nothing to the reserve", () => {
+    const r = splitBuilderFee({ ...base, tier1PartnerUserId: null, tier2PartnerUserId: null, wholesalerPortionPpm: 0 });
+    expect(platform(r)).toBe("30.00");
+    expect(r.lines.some((l) => l.account === "UNALLOCATED_PARTNER_RESERVE")).toBe(false);
+  });
+
+  it("a suspended wholesaler's portion goes to the platform; the affiliate keeps theirs", () => {
+    const r = splitBuilderFee({ ...base, tier1PartnerUserId: "aff", tier2PartnerUserId: null, wholesalerPortionPpm: 100_000 });
+    expect([paid(r, "aff"), platform(r)]).toEqual(["11.00", "19.00"]);
+  });
+
+  it("a portion above the partner share is capped at it", () => {
+    const r = splitBuilderFee({ ...base, tier1PartnerUserId: "aff", tier2PartnerUserId: "ws", wholesalerPortionPpm: 500_000 });
+    expect([paid(r, "ws"), paid(r, "aff")]).toEqual(["21.00", "0.00"]);
+  });
+
+  it("always sums exactly to the revenue (property)", () => {
+    fc.assert(
+      fc.property(fc.bigInt({ min: 0n, max: 10n ** 15n }), fc.integer({ min: 0, max: 1_000_000 }), fc.boolean(), fc.boolean(), (R, portion, aff, ws) => {
+        const r = splitBuilderFee({ revenueE8: R, policy: POLICY, botOwnerUserId: "o", tier1PartnerUserId: aff ? "a" : null, tier2PartnerUserId: ws ? "w" : null, wholesalerPortionPpm: portion });
+        return sum(r.lines) === R && r.lines.every((l) => l.amountE8 >= 0n);
+      }),
+    );
+  });
+});

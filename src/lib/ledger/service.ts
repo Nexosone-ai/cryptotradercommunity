@@ -126,6 +126,7 @@ export async function allocateFeeEvent(tx: DbOrTx, eventId: string) {
     botOwnerUserId: ownerId,
     tier1PartnerUserId: ev.tier1PartnerUserId,
     tier2PartnerUserId: ev.tier2PartnerUserId,
+    wholesalerPortionPpm: ev.wholesalerPortionPpm,
   });
   const journalId = crypto.randomUUID();
   const rows: (typeof ledgerEntries.$inferInsert)[] = [

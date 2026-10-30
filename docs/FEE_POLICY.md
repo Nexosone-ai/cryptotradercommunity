@@ -11,25 +11,32 @@
 - 적용 수수료율 ≤ 사용자가 메인 지갑으로 승인한 `maxFeeRate` ≤ 플랫폼 상한(`PLATFORM_MAX_BUILDER_FEE_TENTHS_BP`, 기본 0.05%) ≤ Hyperliquid 상한(perps 0.1%).
 - 봇 주문의 수수료율은 **구독자가 동의한 값**(`bot_subscriptions.accepted_fee_tenths_bp`)이며 봇의 현재 값이 아니다. 인상 시 구독은 `REQUIRES_RECONSENT`가 되어 재동의 전 봇 주문이 차단되고, 인하는 즉시 적용된다.
 
-## 2. 분배 (초기 기본값, `fee_policy_versions` v1)
+## 2. 분배 (2026-10-30부터: 도매 파트너 + 어필리에이트, `fee_policy_versions` 70 / 9 / 21)
 
 기준 금액 R = 실제 수취 가능하고 **정산 확정(CONFIRMED)** 된 추가 Builder Fee.
 
 | 대상 | R 대비 | 계산 |
 |---|---:|---|
-| 봇 등록자 | 70% | R × 0.70 |
+| 봇 운영자 · 카피 트레이딩 리더 | 70% | R × 0.70 |
 | 관리자 배분 풀 | 30% | R × 0.30 |
-| └ 플랫폼 최종 수익 | 6% | 풀 × 20% |
-| └ 1차 파트너 | 14.4% | 풀 × 80% × 60% |
-| └ 2차 파트너 | 9.6% | 풀 × 80% × 40% |
+| └ 플랫폼 | 9% | 풀 × 30% |
+| └ 파트너 몫 | 21% | 풀 × 70% — 도매 파트너와 어필리에이트가 나눔 |
 
-예: R = 100 USDC → 70 / 6 / 14.4 / 9.6 (테스트: `tests/unit/fee-split.test.ts`, `tests/integration/trading-ledger.test.ts`).
+**파트너 구조 (1단계만)**
+- **도매 파트너(WHOLESALE)**: 관리자만 지정한다. 고객 추천 링크(`/ref/{code}`)와 어필리에이트 초대 링크(`/join/{code}`)를 갖고, 자기 몫(portion)을 정한다. 몫은 수수료 대비 포인트(ppm)이며 0~21%. 하나의 값이 모든 어필리에이트에 적용된다.
+- **어필리에이트(AFFILIATE)**: 도매 파트너의 초대 링크로 가입한다. 고객만 추천할 수 있고, 다른 어필리에이트를 모집할 수 없다.
+- 어필리에이트의 고객: 도매 파트너는 자기 몫, 어필리에이트는 21%에서 그 몫을 뺀 나머지를 받는다. 예: 몫 10% → R = 100 USDC 기준 70 / 9 / 도매 10 / 어필리에이트 11.
+- 도매 파트너가 직접 추천한 고객: 도매 파트너가 21% 전부를 받는다.
+- 몫은 **체결 시점의 값**이 `fee_events.wholesaler_portion_ppm`에 고정된다. 몫을 바꾸면 그 이후 체결부터 적용되고, 이미 기록된 체결에는 소급되지 않는다.
+- 2026-10-30 이전에 기록된 체결(`wholesaler_portion_ppm` NULL)은 기존 2단계 규칙(1차 60% / 2차 40%, 미배정 예비금)으로 배분된다.
+
+(테스트: `tests/unit/fee-split.test.ts`, `tests/integration/trading-ledger.test.ts`, `tests/integration/referral-bots.test.ts`)
 
 ### 불변식 (코드·DB로 강제)
 ```
 bot_owner_share + admin_pool_share = 100%            (ppm으로 저장, 나머지를 1-x로 계산)
 platform_share_of_pool + partner_pool_share = 100%
-tier1_share + tier2_share = 100%
+wholesale_portion + affiliate_share = partner_pool_share   (몫은 파트너 몫을 넘지 않음)
 net_payouts + reserved_unallocated + rounding_remainder = realized_revenue
 ```
 - 각 몫은 R에서 하나의 분모로 내림 계산하고 남는 단위(< 4e-8 USDC)는 `ROUNDING_REMAINDER`로 보낸다 → 합계는 항상 정확히 R (속성 테스트 2,000회).
@@ -37,8 +44,9 @@ net_payouts + reserved_unallocated + rounding_remainder = realized_revenue
 - 원장(`ledger_entries`)과 감사 로그는 UPDATE/DELETE 금지 트리거(append-only).
 
 ## 3. 추천인이 없거나 자격이 없을 때
-- 1·2차 추천인이 없거나 `partners.eligibility_status != ACTIVE` 이면 해당 몫은 `UNALLOCATED_PARTNER_RESERVE`로 보류된다.
-- 예비금은 플랫폼 순이익(6%)에 합산하지 않으며 관리자 대시보드에 별도로 표시된다. 처리(소각·환원·재배분)는 관리자의 명시적 결정 + 감사 로그로만 가능(처리 UI는 Phase 2).
+- 고객에게 파트너가 없으면 관리자 배분 풀 30% 전부가 플랫폼(`PLATFORM_NET_REVENUE`, 메모 "no affiliate")으로 간다.
+- 파트너가 정지(`eligibility_status != ACTIVE`)되면 그 파트너의 몫도 플랫폼으로 간다. 도매 파트너가 정지되면 그 몫만, 어필리에이트가 정지되면 어필리에이트 몫만 플랫폼으로 가고 나머지는 그대로 지급된다.
+- 기존 규칙으로 배분되는 이전 체결만 `UNALLOCATED_PARTNER_RESERVE`를 사용한다.
 
 ## 4. 수동 주문(봇 없음)
 - 기본값: Builder Fee 0 (`MANUAL_ORDER_BUILDER_FEE_TENTHS_BP=0`) → 분배 대상 없음.

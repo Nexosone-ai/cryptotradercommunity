@@ -6,7 +6,6 @@ import { useI18n } from "@/components/I18nProvider";
 import { Badge, buttonClass, Card, cx, Notice, Stat } from "@/components/ui";
 import { apiFetch } from "@/lib/client-api";
 import { dateTime, feeLabel, RISK_LABELS, shortAddress, STATUS_LABELS } from "@/lib/format";
-import { PartnerServicesAdmin } from "./PartnerServicesAdmin";
 import { SwapAdmin } from "./SwapAdmin";
 
 const TABS = [
@@ -14,8 +13,7 @@ const TABS = [
   ["revenue", "Revenue & settlement", "수익·정산"],
   ["payouts", "Payouts", "지급"],
   ["policy", "Fee policy", "수수료 정책"],
-  ["partners", "Referral partners", "추천 파트너"],
-  ["partnerServices", "Partner services", "파트너 서비스"],
+  ["partners", "Partners", "파트너"],
   ["swap", "Swap contract", "스왑 컨트랙트"],
   ["system", "System & risk", "시스템·위험"],
   ["audit", "Audit log", "감사 로그"],
@@ -45,7 +43,6 @@ export function AdminConsole({ adminId }: { adminId: string }) {
       {tab === "payouts" && <Payouts />}
       {tab === "policy" && <Policy />}
       {tab === "partners" && <Partners />}
-      {tab === "partnerServices" && <PartnerServicesAdmin />}
       {tab === "swap" && <SwapAdmin />}
       {tab === "system" && <SystemTab />}
       {tab === "audit" && <Audit />}
@@ -95,12 +92,15 @@ interface PartnerRow {
   wallet: string;
   referralCode: string;
   eligibilityStatus: string;
+  kind: "WHOLESALE" | "AFFILIATE";
+  wholesalerPortionPpm: number | null;
+  wholesalerWallet: string | null;
   createdAt: string;
   direct: number;
   indirect: number;
 }
 
-/** The referral program is not public: an admin appoints each partner personally here. */
+/** The referral program is not public: an admin appoints each wholesale partner personally here; affiliates join through a wholesaler's invite link. */
 function Partners() {
   const { L } = useI18n();
   const { data, error, reload } = useLoad<{ partners: PartnerRow[] }>("/api/admin/partners");
@@ -112,16 +112,17 @@ function Partners() {
     <div className="space-y-6" data-testid="admin-partners">
       {m.msg && <Notice tone={m.msg.tone}>{m.msg.text}</Notice>}
       <Notice tone="info">
-        The referral program is not offered publicly. Only partners you appoint here get a referral code and link; they see them
-        on their My page. The wallet must have signed in to the site once.
+        The referral program is not offered publicly. Partners you appoint here are wholesale partners: they get a client referral link,
+        set their portion of the partner share and recruit affiliates with their own invite link. Affiliates can&apos;t recruit. The wallet must
+        have signed in to the site once.
       </Notice>
       <Card>
-        <h2 className="mb-3 font-semibold">Appoint a partner</h2>
+        <h2 className="mb-3 font-semibold">Appoint a wholesale partner</h2>
         <form
           className="flex flex-wrap gap-2"
           onSubmit={(e) => {
             e.preventDefault();
-            void m.run("/api/admin/partners", { walletAddress: wallet }, "Partner appointed.").then((ok) => ok && setWallet(""));
+            void m.run("/api/admin/partners", { walletAddress: wallet }, "Wholesale partner appointed.").then((ok) => ok && setWallet(""));
           }}
         >
           <input
@@ -132,7 +133,7 @@ function Partners() {
             className="num min-w-0 flex-1"
           />
           <button type="submit" className={buttonClass("primary", "sm")} disabled={m.busy || !wallet.trim()}>
-            Appoint partner
+            Appoint wholesale partner
           </button>
         </form>
       </Card>
@@ -146,9 +147,10 @@ function Partners() {
               <thead className="text-left text-xs text-muted">
                 <tr>
                   <th className="py-2">Wallet</th>
+                  <th>Type</th>
                   <th>Code</th>
                   <th>Status</th>
-                  <th className="text-right">Tier-1 / tier-2 referrals</th>
+                  <th className="text-right">Own clients / affiliates&apos; clients</th>
                   <th />
                 </tr>
               </thead>
@@ -156,6 +158,11 @@ function Partners() {
                 {data.partners.map((p) => (
                   <tr key={p.id}>
                     <td className="py-2">{shortAddress(p.wallet)}</td>
+                    <td className="font-sans">
+                      {p.kind === "WHOLESALE"
+                        ? `Wholesale · portion ${p.wholesalerPortionPpm == null ? "not set" : `${p.wholesalerPortionPpm / 10_000}%`}`
+                        : `Affiliate of ${p.wholesalerWallet ? shortAddress(p.wholesalerWallet) : "—"}`}
+                    </td>
                     <td>{p.referralCode}</td>
                     <td>
                       <Badge tone={p.eligibilityStatus === "ACTIVE" ? "up" : "warn"}>{p.eligibilityStatus}</Badge>
@@ -286,7 +293,7 @@ interface LedgerData {
     hlRewards: { builderRewards: string; unclaimedRewards: string; claimedRewards: string } | null;
     hlError: string | null;
   };
-  events: { ev: { id: string; status: string; amountE8: string; rawAmount: string; occurredAt: string; tier1PartnerUserId: string | null; tier2PartnerUserId: string | null }; botName: string | null; trader: string }[];
+  events: { ev: { id: string; status: string; amountE8: string; rawAmount: string; occurredAt: string; tier1PartnerUserId: string | null; tier2PartnerUserId: string | null; wholesalerPortionPpm: number | null }; botName: string | null; trader: string }[];
 }
 
 function Revenue() {
@@ -390,11 +397,19 @@ function Revenue() {
                       <td>{shortAddress(trader)}</td>
                       <td className="text-right">{ev.rawAmount}</td>
                       <td>
-                        {ev.tier1PartnerUserId
-                          ? ev.tier2PartnerUserId
-                            ? t("Tier 1·2", "1·2차")
-                            : t("Tier 1", "1차")
-                          : t("None → reserve", "없음 → 예비금")}
+                        {ev.wholesalerPortionPpm != null
+                          ? ev.tier1PartnerUserId
+                            ? ev.tier2PartnerUserId
+                              ? "Affiliate + wholesale"
+                              : "Affiliate (wholesale share → platform)"
+                            : ev.tier2PartnerUserId
+                              ? "Wholesale"
+                              : "None → platform"
+                          : ev.tier1PartnerUserId
+                            ? ev.tier2PartnerUserId
+                              ? t("Tier 1·2", "1·2차")
+                              : t("Tier 1", "1차")
+                            : t("None → reserve", "없음 → 예비금")}
                       </td>
                     </tr>
                   ))}
@@ -563,17 +578,15 @@ function Policy() {
   const { t, L } = useI18n();
   const { data, error, reload } = useLoad<{ policies: PolicyRow[] }>("/api/admin/fees/policy");
   const m = useMutate(reload);
-  const [f, setF] = useState({ owner: "70", platform: "20", tier1: "60", effectiveFrom: "", note: "" });
+  const [f, setF] = useState({ owner: "70", platform: "30", tier1: "60", effectiveFrom: "", note: "" });
   if (error) return <Notice tone="down">{L(error)}</Notice>;
   const pct = (ppm: number) => `${ppm / 10_000}%`;
   const toPpm = (v: string) => Math.round(Number(v) * 10_000);
   const o = Number(f.owner) / 100;
   const p = Number(f.platform) / 100;
-  const t1 = Number(f.tier1) / 100;
   const sOwner = (o * 100).toFixed(2);
   const sPlatform = ((1 - o) * p * 100).toFixed(2);
-  const sTier1 = ((1 - o) * (1 - p) * t1 * 100).toFixed(2);
-  const sTier2 = ((1 - o) * (1 - p) * (1 - t1) * 100).toFixed(2);
+  const sPartners = ((1 - o) * (1 - p) * 100).toFixed(2);
   return (
     <div className="space-y-6">
       {m.msg && <Notice tone={m.msg.tone}>{m.msg.text}</Notice>}
@@ -585,7 +598,7 @@ function Policy() {
               <th className="py-1">{t("Version", "버전")}</th>
               <th>{t("Bot owner", "봇 등록자")}</th>
               <th>{t("Pool → platform", "풀 → 플랫폼")}</th>
-              <th>{t("Partner → tier 1", "파트너 → 1차")}</th>
+              <th>Partners (of fee)</th>
               <th>{t("Effective", "시행")}</th>
               <th>{t("Note", "메모")}</th>
             </tr>
@@ -596,7 +609,7 @@ function Policy() {
                 <td className="py-1.5">v{x.version}</td>
                 <td>{pct(x.botOwnerSharePpm)}</td>
                 <td>{pct(x.platformShareOfPoolPpm)}</td>
-                <td>{pct(x.tier1ShareOfPartnerPoolPpm)}</td>
+                <td>{pct(Math.floor(((1_000_000 - x.botOwnerSharePpm) * (1_000_000 - x.platformShareOfPoolPpm)) / 1_000_000))}</td>
                 <td>{dateTime(x.effectiveFrom)}</td>
                 <td className="font-sans text-xs text-muted">{x.note}</td>
               </tr>
@@ -616,10 +629,6 @@ function Policy() {
             <input value={f.platform} onChange={(e) => setF({ ...f, platform: e.target.value })} />
           </div>
           <div>
-            <label>{t("Tier-1 share of partner pool (%)", "파트너 풀 중 1차 (%)")}</label>
-            <input value={f.tier1} onChange={(e) => setF({ ...f, tier1: e.target.value })} />
-          </div>
-          <div>
             <label>{t("Effective from", "시행 시각")}</label>
             <input type="datetime-local" value={f.effectiveFrom} onChange={(e) => setF({ ...f, effectiveFrom: e.target.value })} />
           </div>
@@ -629,15 +638,8 @@ function Policy() {
           </div>
         </div>
         <p className="num text-xs text-muted">
-          {t(
-            <>
-              Result: bot owner {sOwner}% · platform {sPlatform}% · tier 1 {sTier1}% · tier 2 {sTier2}% (total 100%)
-            </>,
-            <>
-              결과: 등록자 {sOwner}% · 플랫폼 {sPlatform}% · 1차 {sTier1}% · 2차{" "}
-              {sTier2}% (합계 100%)
-            </>,
-          )}
+          Result: bot or copy-trading operator {sOwner}% · platform {sPlatform}% · partners {sPartners}% (wholesale portion + affiliate; all to the
+          platform when the client has no partner)
         </p>
         <button
           className={buttonClass("primary", "sm")}

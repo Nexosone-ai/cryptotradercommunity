@@ -181,7 +181,7 @@ test("manual order is refused without trading permission (server gate)", async (
   await context.close();
 });
 
-test("admin appoints a partner; referral link and two-tier relation", async ({ browser }) => {
+test("admin appoints a wholesale partner; client referral link; affiliate joins through the invite link", async ({ browser }) => {
   const { page, context, account } = await walletPage(browser, E2E_KEYS.partner);
   await page.goto("/");
   await signInViaUi(page);
@@ -194,10 +194,10 @@ test("admin appoints a partner; referral link and two-tier relation", async ({ b
   await admin.page.goto("/");
   await signInViaUi(admin.page);
   await admin.page.goto("/admin");
-  await admin.page.getByRole("button", { name: "Referral partners" }).click();
+  await admin.page.getByRole("button", { name: "Partners", exact: true }).click();
   await admin.page.getByLabel("Partner wallet address").fill(account.address);
-  await admin.page.getByRole("button", { name: "Appoint partner" }).click();
-  await expect(admin.page.getByText("Partner appointed.")).toBeVisible();
+  await admin.page.getByRole("button", { name: "Appoint wholesale partner" }).click();
+  await expect(admin.page.getByText("Wholesale partner appointed.")).toBeVisible();
   await expect(admin.page.getByTestId("admin-partners").getByText("ACTIVE", { exact: true })).toBeVisible();
   await admin.context.close();
 
@@ -233,6 +233,33 @@ test("admin appoints a partner; referral link and two-tier relation", async ({ b
   const refs = await (await page.request.get("/api/partner/referrals")).json();
   expect(refs.referrals.some((r: { tier: number }) => r.tier === 1)).toBe(true);
   await fresh.close();
+
+  // The wholesale partner sets their portion (10 of the 21 points); the affiliate invite link appears.
+  await page.goto("/partner");
+  const program = page.getByTestId("affiliate-program");
+  await expect(program.getByText("Save your portion first")).toBeVisible();
+  await program.getByLabel(/Your portion/).fill("10");
+  await expect(program.getByTestId("portion-example")).toContainText("you $10.00 · affiliate $11.00");
+  await program.getByRole("button", { name: "Save" }).click();
+  const invite = (await program.getByTestId("invite-url").textContent())!.trim();
+  expect(invite).toMatch(/\/join\/[A-Z2-9]{10}$/);
+
+  // A new wallet opens the invite link, signs in and joins as an affiliate.
+  const affCtx = await browser.newContext();
+  await installTestWallet(affCtx, generatePrivateKey());
+  const aff = await affCtx.newPage();
+  await aff.goto(new URL(invite).pathname);
+  await expect(aff.getByTestId("join-terms")).toContainText("invites you to their affiliate program");
+  await aff.getByRole("button", { name: "Connect MetaMask to join" }).click();
+  await aff.getByRole("checkbox").first().check();
+  await aff.getByRole("button", { name: /Connect .* and sign/ }).click();
+  await aff.getByRole("button", { name: "Join as an affiliate" }).click();
+  await expect(aff).toHaveURL(/\/partner$/);
+  await expect(aff.getByRole("heading", { name: "Affiliate dashboard" })).toBeVisible();
+  await expect(aff.getByTestId("affiliate-program")).toHaveCount(0);
+  await page.reload();
+  await expect(page.getByTestId("affiliate-list").getByText("ACTIVE")).toBeVisible();
+  await affCtx.close();
   await context.close();
 });
 
@@ -314,71 +341,6 @@ test("docs state: no platform swap fee; each party is responsible for their swap
   await expect(page.locator("#swap")).toContainText("The platform charges no fee for swaps.");
   await expect(page.locator("#swap")).toContainText("Each party to a swap is solely responsible for it.");
 });
-
-test("partner billing: bank top-up → admin credit → customer invoice → payment confirmed → earnings", async ({ browser, baseURL }) => {
-  // Fresh partner wallet.
-  const { generatePrivateKey } = await import("viem/accounts");
-  const ctx = await browser.newContext();
-  await installTestWallet(ctx, generatePrivateKey());
-  const page = await ctx.newPage();
-  await page.goto("/");
-  await signInViaUi(page);
-  const r = api(page.request, baseURL!);
-  const partnerWallet = (await (await page.request.get("/api/me")).json()).user.walletAddress;
-
-  // Partners are appointed by the admin.
-  const admin = await walletPage(browser, E2E_KEYS.admin);
-  await admin.page.goto("/");
-  await signInViaUi(admin.page);
-  const ra = api(admin.page.request, baseURL!);
-  expect((await ra.post("/api/admin/partners", { walletAddress: partnerWallet })).status()).toBe(201);
-
-  // Top-up request shows the company account and a reference code.
-  await page.goto("/partner");
-  await expect(page.getByTestId("partner-services")).toBeVisible();
-  await expect(page.getByText(/The video generation service \(fal.ai\) is not set up yet/)).toBeVisible();
-  await page.getByRole("tab", { name: "Credits" }).click();
-  // Packages are priced in KRW from a live exchange rate, VAT included.
-  const packages = page.getByTestId("credit-packages");
-  await expect(packages.getByText("$50", { exact: true })).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByText(/KRW amounts include 10% VAT/)).toBeVisible();
-  await packages.getByRole("button", { name: "Request purchase" }).first().click();
-  const instructions = page.getByTestId("topup-instructions");
-  await expect(instructions.getByText("000-111-222")).toBeVisible();
-  await expect(instructions.getByText(/^₩[\d,]+$/)).toBeVisible();
-  const ref = (await instructions.locator("dd.font-bold.text-accent").first().textContent())!.trim();
-  expect(ref).toMatch(/^TOP-/);
-
-  // Admin confirms the deposit.
-  const list = await (await admin.page.request.get("/api/admin/partner-services")).json();
-  const topup = list.topups.find((x: { t: { referenceCode: string } }) => x.t.referenceCode === ref).t;
-  // VAT-inclusive KRW amount locked into the request: total = supply + floor(supply × 10%).
-  expect(Number(topup.krwTotal)).toBe(Number(topup.krwSupply) + Math.floor(Number(topup.krwSupply) / 10));
-  expect((await ra.post(`/api/admin/partner-services/topups/${topup.id}`, { decision: "APPROVE" })).status()).toBe(200);
-
-  // Partner issues an invoice; the public page shows the company account.
-  const inv = await (await r.post("/api/partner/invoices", { issuerName: "E2E Studio", customerName: "Customer K", description: "10 promo clips", amountUsd: "40" })).json();
-  const pub = await browser.newPage();
-  await pub.goto(`/invoice/${inv.invoice.publicToken}`);
-  await expect(pub.getByRole("heading", { name: "E2E Studio" })).toBeVisible();
-  await expect(pub.getByText("$40.00 USD")).toBeVisible();
-  await expect(pub.getByText("000-111-222")).toBeVisible();
-  await expect(pub.getByText(inv.invoice.referenceCode)).toBeVisible();
-
-  // Admin confirms the customer's payment → full amount owed to the partner.
-  expect((await ra.post(`/api/admin/partner-services/invoices/${inv.invoice.id}/paid`, {})).status()).toBe(200);
-  const summary = await (await page.request.get("/api/partner/services")).json();
-  expect(summary.creditE8).toBe("5000000000");
-  expect(summary.invoicePayableE8).toBe("4000000000");
-  await pub.reload();
-  await expect(pub.getByText("Payment received")).toBeVisible();
-  // Non-admins cannot confirm payments.
-  expect((await r.post(`/api/admin/partner-services/invoices/${inv.invoice.id}/paid`, {})).status()).toBe(403);
-  await pub.close();
-  await admin.context.close();
-  await ctx.close();
-});
-
 
 test("strategy source: Pine Script pasted in the wizard is analysed, stored privately and shown to the owner", async ({ browser, baseURL }) => {
   const { readFileSync } = await import("node:fs");

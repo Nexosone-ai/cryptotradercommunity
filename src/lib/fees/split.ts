@@ -11,8 +11,15 @@
  *
  * Each leaf is floored from R with one combined denominator; the leftover
  * (< 4 units) goes to ROUNDING_REMAINDER so that leaves + remainder = R exactly.
- * Partner tiers without an eligible partner go to UNALLOCATED_PARTNER_RESERVE —
- * never to the platform's net revenue.
+ *
+ * Wholesale model (wholesalerPortionPpm set; fee events from 2026-10-30):
+ *   partner pool is shared by the client's affiliate (tier 1) and the wholesaler (tier 2):
+ *     wholesaler = min(R × portion, partner pool), affiliate = partner pool − wholesaler.
+ *   A client referred by the wholesaler directly: the wholesaler gets the whole partner pool.
+ *   A share with no eligible partner (no referrer, or a suspended one) goes to the platform.
+ *
+ * Legacy model (wholesalerPortionPpm null; events recorded before): tier1/tier2 by the
+ * policy's tier1 share, and a missing tier goes to UNALLOCATED_PARTNER_RESERVE.
  */
 
 export const PPM = 1_000_000n;
@@ -30,6 +37,8 @@ export interface SplitInput {
   botOwnerUserId: string | null;
   tier1PartnerUserId: string | null;
   tier2PartnerUserId: string | null;
+  /** Wholesaler's portion (ppm of R) snapshotted at fill time; null = legacy tier split. */
+  wholesalerPortionPpm?: number | null;
 }
 
 export type SplitLine =
@@ -70,14 +79,8 @@ export function splitBuilderFee(input: SplitInput): SplitResult {
   const pool = PPM - owner;
   const platformOfPool = BigInt(policy.platformShareOfPoolPpm);
   const partnersOfPool = PPM - platformOfPool;
-  const t1 = BigInt(policy.tier1ShareOfPartnerPoolPpm);
-  const t2 = PPM - t1;
-
   const botOwner = (R * owner) / PPM;
   const platformNet = (R * pool * platformOfPool) / (PPM * PPM);
-  const tier1 = (R * pool * partnersOfPool * t1) / (PPM * PPM * PPM);
-  const tier2 = (R * pool * partnersOfPool * t2) / (PPM * PPM * PPM);
-  const remainder = R - botOwner - platformNet - tier1 - tier2;
 
   const lines: SplitLine[] = [];
   if (input.botOwnerUserId) {
@@ -86,6 +89,30 @@ export function splitBuilderFee(input: SplitInput): SplitResult {
     lines.push({ account: "PLATFORM_NET_REVENUE", amountE8: botOwner, memo: "owner share of non-bot order" });
   }
   lines.push({ account: "PLATFORM_NET_REVENUE", amountE8: platformNet });
+
+  if (input.wholesalerPortionPpm != null) {
+    const partnerPool = (R * pool * partnersOfPool) / (PPM * PPM);
+    const portion = BigInt(Math.max(0, Math.min(1_000_000, Math.trunc(input.wholesalerPortionPpm))));
+    const affiliate = input.tier1PartnerUserId;
+    const wholesaler = input.tier2PartnerUserId;
+    // Wholesaler's cut applies only when an affiliate brought the client; a direct client's pool is all theirs.
+    const wholesalerCut = affiliate === null && wholesaler !== null ? partnerPool : minBig((R * portion) / PPM, partnerPool);
+    const tier2 = wholesalerCut;
+    const tier1 = partnerPool - wholesalerCut;
+    const remainder = R - botOwner - platformNet - tier1 - tier2;
+    if (affiliate) lines.push({ account: "PARTNER_PAYABLE", userId: affiliate, tier: 1, amountE8: tier1 });
+    else if (tier1 > 0n) lines.push({ account: "PLATFORM_NET_REVENUE", amountE8: tier1, memo: "no affiliate" });
+    if (wholesaler) lines.push({ account: "PARTNER_PAYABLE", userId: wholesaler, tier: 2, amountE8: tier2 });
+    else if (tier2 > 0n) lines.push({ account: "PLATFORM_NET_REVENUE", amountE8: tier2, memo: "no wholesale partner" });
+    lines.push({ account: "ROUNDING_REMAINDER", amountE8: remainder });
+    return { lines, botOwner, platformNet, tier1: affiliate ? tier1 : 0n, tier2: wholesaler ? tier2 : 0n, remainder };
+  }
+
+  const t1 = BigInt(policy.tier1ShareOfPartnerPoolPpm);
+  const t2 = PPM - t1;
+  const tier1 = (R * pool * partnersOfPool * t1) / (PPM * PPM * PPM);
+  const tier2 = (R * pool * partnersOfPool * t2) / (PPM * PPM * PPM);
+  const remainder = R - botOwner - platformNet - tier1 - tier2;
   lines.push(
     input.tier1PartnerUserId
       ? { account: "PARTNER_PAYABLE", userId: input.tier1PartnerUserId, tier: 1, amountE8: tier1 }
@@ -100,3 +127,5 @@ export function splitBuilderFee(input: SplitInput): SplitResult {
 
   return { lines, botOwner, platformNet, tier1, tier2, remainder };
 }
+
+const minBig = (a: bigint, b: bigint) => (a < b ? a : b);

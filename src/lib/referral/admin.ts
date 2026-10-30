@@ -7,8 +7,9 @@ import { badRequest, notFound } from "../http";
 import { activatePartner } from "./service";
 
 /**
- * The referral program is not a public offer. An admin appoints each partner
- * personally from the admin console; users cannot sign themselves up.
+ * The referral program is not a public offer. An admin appoints each wholesale
+ * partner personally from the admin console; affiliates join only through a
+ * wholesale partner's invite link (lib/referral/service.ts#joinAsAffiliate).
  */
 export async function listPartners(db: Db) {
   return db
@@ -18,6 +19,9 @@ export async function listPartners(db: Db) {
       wallet: users.walletAddress,
       referralCode: partners.referralCode,
       eligibilityStatus: partners.eligibilityStatus,
+      kind: partners.kind,
+      wholesalerPortionPpm: partners.wholesalerPortionPpm,
+      wholesalerWallet: sql<string | null>`(select u.wallet_address from users u where u.id = ${partners.wholesalerUserId})`,
       createdAt: partners.createdAt,
       direct: sql<number>`(select count(*)::int from ${referralRelations} where ${referralRelations.directPartnerUserId} = ${partners.userId})`,
       indirect: sql<number>`(select count(*)::int from ${referralRelations} where ${referralRelations.indirectPartnerUserId} = ${partners.userId})`,

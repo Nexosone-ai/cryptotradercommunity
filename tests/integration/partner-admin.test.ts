@@ -28,7 +28,7 @@ describe("admin-appointed referral partners", () => {
     await expect(grantPartner(db, admin, "0x00000000000000000000000000000000000000aa")).rejects.toMatchObject({ status: 404 });
   });
 
-  it("a suspended partner earns no tier share until reactivated", async () => {
+  it("a suspended wholesale partner earns no share until reactivated", async () => {
     const admin = await makeUser(db, ["ADMIN"]);
     const p = await makeUser(db);
     const trader = await makeUser(db);
@@ -36,8 +36,8 @@ describe("admin-appointed referral partners", () => {
     await registerReferral(db, trader.id, partner.referralCode);
     expect((await listPartners(db)).find((x) => x.id === partner.id)?.direct).toBe(1);
     await setPartnerStatus(db, admin, partner.id, "SUSPENDED");
-    expect((await resolveBeneficiaries(db, trader.id)).tier1).toBeNull();
+    expect((await resolveBeneficiaries(db, trader.id)).tier2).toBeNull();
     await setPartnerStatus(db, admin, partner.id, "ACTIVE");
-    expect((await resolveBeneficiaries(db, trader.id)).tier1).toBe(p.id);
+    expect((await resolveBeneficiaries(db, trader.id)).tier2).toBe(p.id);
   });
 });

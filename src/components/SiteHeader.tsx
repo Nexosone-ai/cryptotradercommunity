@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
+import { BrandMark, Wordmark } from "./Brand";
 import { useI18n } from "./I18nProvider";
 import { shortAddress } from "@/lib/format";
 import { buttonClass, cx } from "./ui";
@@ -35,9 +36,9 @@ export function SiteHeader() {
     <>
     <header className="sticky top-0 z-40 border-b border-line bg-bg/90 backdrop-blur">
       <div className="mx-auto flex h-14 max-w-7xl items-center gap-4 px-4">
-        <Link href="/" className="flex items-center gap-2 font-bold tracking-tight">
-          <span className="rounded-md bg-accent px-1.5 py-0.5 text-sm text-black">CTC</span>
-          <span className="hidden text-sm sm:inline">CryptoTraderCommunity</span>
+        <Link href="/" className="flex items-center gap-2 font-bold tracking-tight" aria-label="cryptotradercommunity.org — home">
+          <BrandMark size={30} />
+          <Wordmark className="hidden text-[15px] sm:inline" />
         </Link>
         <span
           className={cx(

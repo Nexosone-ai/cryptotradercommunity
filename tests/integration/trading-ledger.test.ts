@@ -2,9 +2,9 @@ import { randomBytes } from "node:crypto";
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { Db } from "@/lib/db/client";
-import { feeEvents, ledgerEntries, orders, riskEvents } from "@/lib/db/schema";
+import { feeEvents, ledgerEntries, orders, partners, riskEvents } from "@/lib/db/schema";
 import { createBot, ownerSetStatus, reviewBot, submitBot, subscribe, unsubscribe, updateBot } from "@/lib/bots/service";
-import { activatePartner, registerReferral } from "@/lib/referral/service";
+import { activatePartner, joinAsAffiliate, registerReferral, setWholesalerPortion } from "@/lib/referral/service";
 import { placeOrder, prepareAgent, verifyAgent } from "@/lib/trading/service";
 import { ingestFills } from "@/lib/settlement/ingest";
 import {
@@ -187,9 +187,10 @@ describe("fee ledger and settlement", () => {
     hl = fakeHl();
     A = await makeUser(db);
     B = await makeUser(db);
-    const pa = await activatePartner(db, A.id, A.walletAddress);
-    await registerReferral(db, B.id, pa.referralCode);
-    const pb = await activatePartner(db, B.id, B.walletAddress);
+    // A: wholesale partner keeping 10 points; B: A's affiliate; C: B's client.
+    await activatePartner(db, A.id, A.walletAddress);
+    const pa = await setWholesalerPortion(db, A, 100_000, 210_000);
+    const pb = await joinAsAffiliate(db, B, pa.affiliateInviteCode!);
     C = await makeUser(db);
     await registerReferral(db, C.id, pb.referralCode);
   });
@@ -209,23 +210,23 @@ describe("fee ledger and settlement", () => {
     return { bot, owner, admin, order, fill };
   }
 
-  it("A → B → C: one fill of 100 USDC builder fee allocates 70 / 6 / 14.4 (B) / 9.6 (A)", async () => {
+  it("affiliate's client: one fill of 100 USDC builder fee allocates 70 / 9 / 11 (affiliate B) / 10 (wholesaler A)", async () => {
     const { owner, admin, fill } = await filledBotOrder(C);
     const r = await ingestFills(db, "testnet", C.walletAddress, [fill]);
     expect(r).toMatchObject({ matched: 1, newFills: 1, newFeeEvents: 1 });
     const [ev] = await db.select().from(feeEvents);
-    expect(ev).toMatchObject({ status: "OBSERVED", tier1PartnerUserId: B.id, tier2PartnerUserId: A.id });
+    expect(ev).toMatchObject({ status: "OBSERVED", tier1PartnerUserId: B.id, tier2PartnerUserId: A.id, wholesalerPortionPpm: 100_000 });
 
     // Nothing is payable before revenue is confirmed.
     expect(await payableBalance(db, owner.id, "BOT_OWNER_PAYABLE")).toBe(0n);
     await confirmAndAllocate(db, admin, [ev.id], "matched HL referral.builderRewards");
 
     expect(formatUsdcE8(await payableBalance(db, owner.id, "BOT_OWNER_PAYABLE"))).toBe("70.00");
-    expect(formatUsdcE8(await payableBalance(db, B.id, "PARTNER_PAYABLE"))).toBe("14.40");
-    expect(formatUsdcE8(await payableBalance(db, A.id, "PARTNER_PAYABLE"))).toBe("9.60");
+    expect(formatUsdcE8(await payableBalance(db, B.id, "PARTNER_PAYABLE"))).toBe("11.00");
+    expect(formatUsdcE8(await payableBalance(db, A.id, "PARTNER_PAYABLE"))).toBe("10.00");
     const rep = await reconcile(db);
     expect(rep.issues).toEqual([]);
-    expect(formatUsdcE8(rep.platformNetE8)).toBe("6.00");
+    expect(formatUsdcE8(rep.platformNetE8)).toBe("9.00");
     expect(rep.unallocatedReserveE8).toBe(0n);
     expect(formatUsdcE8(rep.allocatedRevenueE8)).toBe("100.00");
   });
@@ -243,15 +244,28 @@ describe("fee ledger and settlement", () => {
     expect((await reconcile(db)).issues).toEqual([]);
   });
 
-  it("no referrer → partner shares go to the unallocated reserve", async () => {
+  it("the wholesaler's own client gives them the whole 21%", async () => {
+    const pa = (await db.select().from(partners).where(eq(partners.userId, A.id)))[0];
+    const direct = await makeUser(db);
+    await registerReferral(db, direct.id, pa.referralCode);
+    const { admin, fill } = await filledBotOrder(direct);
+    await ingestFills(db, "testnet", direct.walletAddress, [fill]);
+    const [ev] = await db.select().from(feeEvents);
+    expect(ev).toMatchObject({ tier1PartnerUserId: null, tier2PartnerUserId: A.id });
+    await confirmAndAllocate(db, admin, [ev.id], "ok");
+    expect(formatUsdcE8(await payableBalance(db, A.id, "PARTNER_PAYABLE"))).toBe("21.00");
+    expect((await reconcile(db)).issues).toEqual([]);
+  });
+
+  it("no referrer → the whole 30% goes to the platform", async () => {
     const lone = await makeUser(db);
     const { admin, fill } = await filledBotOrder(lone);
     await ingestFills(db, "testnet", lone.walletAddress, [fill]);
     const [ev] = await db.select().from(feeEvents);
     await confirmAndAllocate(db, admin, [ev.id], "ok");
     const rep = await reconcile(db);
-    expect(formatUsdcE8(rep.unallocatedReserveE8)).toBe("24.00");
-    expect(formatUsdcE8(rep.platformNetE8)).toBe("6.00");
+    expect(rep.unallocatedReserveE8).toBe(0n);
+    expect(formatUsdcE8(rep.platformNetE8)).toBe("30.00");
     expect(rep.issues).toEqual([]);
   });
 
@@ -289,7 +303,7 @@ describe("fee ledger and settlement", () => {
     ).rejects.toMatchObject({ code: "RETROACTIVE_POLICY" });
     const [ev] = await db.select().from(feeEvents);
     await confirmAndAllocate(db, admin, [ev.id], "ok");
-    expect(formatUsdcE8((await reconcile(db)).platformNetE8)).toBe("6.00");
+    expect(formatUsdcE8((await reconcile(db)).platformNetE8)).toBe("9.00");
   });
 
   it("ledger entries are append-only and journals must balance", async () => {

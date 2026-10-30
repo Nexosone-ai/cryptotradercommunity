@@ -347,8 +347,25 @@ export const partners = pgTable("partners", {
   /** ACTIVE | SUSPENDED */
   eligibilityStatus: text("eligibility_status").notNull(),
   termsAcceptedAt: timestamp("terms_accepted_at", { withTimezone: true }).notNull(),
+  /**
+   * WHOLESALE: appointed by an admin; refers clients and recruits affiliates.
+   * AFFILIATE: joined through a wholesaler's invite link; refers clients only.
+   */
+  kind: text("kind").notNull().default("WHOLESALE"),
+  /** AFFILIATE: the wholesaler they joined under. */
+  wholesalerUserId: text("wholesaler_user_id").references(() => users.id),
+  /** WHOLESALE: code in the affiliate invite link (/join/{code}). */
+  affiliateInviteCode: text("affiliate_invite_code").unique(),
+  /**
+   * WHOLESALE: what the wholesaler keeps of each Builder Fee their affiliates' clients pay,
+   * in ppm of the whole fee (100000 = 10 points); the affiliate gets the rest of the partner share.
+   */
+  wholesalerPortionPpm: integer("wholesaler_portion_ppm"),
   createdAt: createdAt(),
-});
+}, (t) => [
+  check("partners_kind", sql`${t.kind} in ('WHOLESALE', 'AFFILIATE')`),
+  check("partners_portion_range", sql`${t.wholesalerPortionPpm} is null or ${t.wholesalerPortionPpm} between 0 and 1000000`),
+]);
 
 export const referralRelations = pgTable("referral_relations", {
   traderUserId: text("trader_user_id").primaryKey().references(() => users.id),
@@ -395,9 +412,14 @@ export const feeEvents = pgTable("fee_events", {
   /** Original string from Hyperliquid, kept for audit. */
   rawAmount: text("raw_amount").notNull(),
   feePolicyVersionId: text("fee_policy_version_id").notNull().references(() => feePolicyVersions.id),
-  /** Referral snapshot at fill time. Null = no eligible partner at that tier. */
+  /**
+   * Referral snapshot at fill time. Null = no eligible partner at that tier.
+   * Wholesale model (wholesalerPortionPpm set): tier1 = the client's affiliate, tier2 = the wholesaler.
+   */
   tier1PartnerUserId: text("tier1_partner_user_id").references(() => users.id),
   tier2PartnerUserId: text("tier2_partner_user_id").references(() => users.id),
+  /** Wholesaler's portion at fill time (ppm of the fee). Null = event recorded before the wholesale model (legacy tier split). */
+  wholesalerPortionPpm: integer("wholesaler_portion_ppm"),
   /** OBSERVED | CONFIRMED | ALLOCATED | VOIDED */
   status: text("status").notNull(),
   occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
@@ -417,7 +439,7 @@ export const ledgerAccountEnum = pgEnum("ledger_account", [
   "PLATFORM_NET_REVENUE",
   "UNALLOCATED_PARTNER_RESERVE",
   "ROUNDING_REMAINDER",
-  // Partner video service (docs/PARTNER_VIDEO.md)
+  // Partner video service (removed 2026-10-30; kept so existing ledger lines stay valid)
   "COMPANY_BANK",
   "PARTNER_CREDIT",
   "VIDEO_SERVICE_REVENUE",
@@ -575,7 +597,7 @@ export const swapFills = pgTable("swap_fills", {
   createdAt: createdAt(),
 }, (t) => [uniqueIndex("swap_fills_tx_log_uq").on(t.chainId, t.txHash, t.logIndex)]);
 
-// ── Partner video service (docs/PARTNER_VIDEO.md) ──────────────────────────
+// ── Partner video service — feature removed 2026-10-30. Tables are kept, unused, so existing records stay intact. ──
 // Amounts are USD in e8 units, like the rest of the ledger.
 
 /** Bank-transfer credit top-up, credited only after an admin confirms receipt. */

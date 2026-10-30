@@ -1,11 +1,12 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import Link from "next/link";
+import { BrandMark } from "@/components/Brand";
 import { I18nProvider } from "@/components/I18nProvider";
 import { SiteHeader } from "@/components/SiteHeader";
 import { WalletProvider, type Me } from "@/components/wallet/WalletProvider";
 import { getCurrentUser } from "@/lib/auth/current";
-import { getPublicConfig } from "@/lib/config";
+import { getConfig, getPublicConfig } from "@/lib/config";
 import { getI18n } from "@/lib/i18n-server";
 import "./globals.css";
 
@@ -15,6 +16,8 @@ const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"]
 export async function generateMetadata(): Promise<Metadata> {
   const { t } = await getI18n();
   return {
+    // Absolute URLs for the social preview image (app/opengraph-image.png).
+    metadataBase: getConfig().appUrl,
     title: { default: "CryptoTraderCommunity", template: "%s · CryptoTraderCommunity" },
     description: t(
       "An open community where anyone can list trading bots, publish verified live performance and trade on Hyperliquid liquidity.",
@@ -59,7 +62,9 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
                 <Link href="/docs">{t("Service, fees & security", "서비스·수수료·보안 문서")}</Link>
                 <Link href="/docs#risk">{t("Risk disclosure", "위험 고지")}</Link>
                 <Link href="/docs#terms">{t("Terms of use", "이용약관")}</Link>
-                <span>© CryptoTraderCommunity</span>
+                <span className="inline-flex items-center gap-1.5">
+                  <BrandMark size={18} className="rounded" /> © cryptotradercommunity.org
+                </span>
               </p>
             </div>
           </footer>

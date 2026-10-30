@@ -68,11 +68,11 @@ export function PartnerTools({ code, url }: { code: string; url: string }) {
         <div className="mb-3 flex flex-wrap items-end gap-3">
           <h2 className="mr-auto font-semibold">{t("Earnings history", "수익 내역")}</h2>
           <div>
-            <label>{t("Tier", "단계")}</label>
+            <label>Type</label>
             <select value={filter.tier} onChange={(e) => setFilter({ ...filter, tier: e.target.value })} className="w-auto">
               <option value="">{t("All", "전체")}</option>
-              <option value="1">{t("Tier 1", "1차")}</option>
-              <option value="2">{t("Tier 2", "2차")}</option>
+              <option value="1">Affiliate</option>
+              <option value="2">Wholesale</option>
             </select>
           </div>
           <div>
@@ -97,7 +97,7 @@ export function PartnerTools({ code, url }: { code: string; url: string }) {
               <thead className="text-left text-xs text-muted">
                 <tr>
                   <th className="py-1">{t("Filled at", "체결 시각")}</th>
-                  <th>{t("Tier", "단계")}</th>
+                  <th>Type</th>
                   <th>{t("Bot", "봇")}</th>
                   <th>{t("Trader", "트레이더")}</th>
                   <th className="text-right">Builder Fee</th>
@@ -109,7 +109,7 @@ export function PartnerTools({ code, url }: { code: string; url: string }) {
                 {rows.map((r) => (
                   <tr key={r.entryId}>
                     <td className="py-1.5">{dateTime(r.occurredAt)}</td>
-                    <td>{t(`Tier ${r.tier}`, `${r.tier}차`)}</td>
+                    <td>{r.tier === 1 ? "Affiliate" : "Wholesale"}</td>
                     <td className="font-sans">{r.bot}</td>
                     <td>{r.trader}</td>
                     <td className="text-right">{e8(r.builderFeeE8)}</td>

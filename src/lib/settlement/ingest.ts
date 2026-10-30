@@ -100,6 +100,7 @@ export async function ingestFills(db: Db, network: "testnet" | "mainnet", hlAddr
         feePolicyVersionId: policy.id,
         tier1PartnerUserId: beneficiaries.tier1,
         tier2PartnerUserId: beneficiaries.tier2,
+        wholesalerPortionPpm: beneficiaries.wholesalerPortionPpm,
         status: "OBSERVED",
         occurredAt: sourceTime,
       })

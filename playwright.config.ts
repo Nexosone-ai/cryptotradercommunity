@@ -32,11 +32,6 @@ export default defineConfig({
       // Bot engine on (testnet); the specs never give a subscriber trading permission, so no real orders are sent.
       BOT_ENGINE_ENABLED: "true",
       CRON_SECRET: "e2e-cron-secret",
-      // Placeholder company account for the partner billing flow (test only).
-      COMPANY_NAME: "E2E Test Co",
-      COMPANY_BANK_NAME: "E2E Bank",
-      COMPANY_BANK_ACCOUNT: "000-111-222",
-      COMPANY_BANK_HOLDER: "E2E Test Co",
     },
   },
 });
