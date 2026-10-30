@@ -1,6 +1,7 @@
 import Decimal from "decimal.js";
 import { and, desc, eq, lt, sql } from "drizzle-orm";
 import type { SessionUser } from "../auth/session";
+import { stageNotionalUsd } from "../bots/scenario";
 import { isCopyBot, type BotConfig } from "../bots/schema";
 import { getConfig } from "../config";
 import type { Db } from "../db/client";
@@ -21,7 +22,7 @@ import {
   type Outcome,
 } from "./common";
 import { copyToFollower } from "./copy";
-import type { TargetAction } from "./signals";
+import { stageOf, type TargetAction } from "./signals";
 
 /**
  * Bot execution engine (docs/BOT_ENGINE.md).
@@ -146,7 +147,7 @@ async function runForSubscriber(db: Db, hl: HlGateway, bot: Bot, config: BotConf
   if (!claim) return null;
   let outcome: Outcome;
   try {
-    outcome = isCopyBot(config) ? await copyToFollower(db, hl, bot, config, signal, sub) : await moveToTarget(db, hl, bot, config, signal.coin, sub, target);
+    outcome = isCopyBot(config) ? await copyToFollower(db, hl, bot, config, signal, sub) : await moveToTarget(db, hl, bot, config, signal.coin, sub, target, stageOf(signal.payload));
   } catch (err) {
     const reason = err instanceof ApiError ? `${err.code}: ${message(err)}` : message(err);
     outcome = { status: "FAILED", reason: reason.slice(0, 500), orderIds: [] };
@@ -155,7 +156,16 @@ async function runForSubscriber(db: Db, hl: HlGateway, bot: Bot, config: BotConf
   return outcome;
 }
 
-async function moveToTarget(db: Db, hl: HlGateway, bot: Bot, config: BotConfig, coin: string, sub: Subscription, target: TargetAction): Promise<Outcome> {
+async function moveToTarget(
+  db: Db,
+  hl: HlGateway,
+  bot: Bot,
+  config: BotConfig,
+  coin: string,
+  sub: Subscription,
+  target: TargetAction,
+  stage: number | null,
+): Promise<Outcome> {
   const [u] = await db.select().from(users).where(eq(users.id, sub.userId)).limit(1);
   if (!u) return { status: "FAILED", reason: "Subscriber not found.", orderIds: [] };
   // placeOrder only needs the identity; roles/session are irrelevant for bot orders.
@@ -212,7 +222,18 @@ async function moveToTarget(db: Db, hl: HlGateway, bot: Bot, config: BotConfig, 
   if (await hasUnprotectedPosition(db, sub.id)) {
     return { status: "SKIPPED", reason: `${closedNote}A bot position is open without a stop loss; no new positions until it is protected or closed.`, orderIds };
   }
-  const orderUsd = Decimal.min(sub.orderUsd, config.risk.maxOrderUsd);
+  // Staged scenario: the subscription holds the strategy capital and the signal names the stage.
+  let stageNote = "";
+  let size = new Decimal(sub.orderUsd);
+  if (config.scenario) {
+    if (!stage || stage > config.scenario.stages.length) {
+      return { status: "SKIPPED", reason: `${closedNote}The signal names no valid stage (1–${config.scenario.stages.length}), so the entry size is unknown.`, orderIds };
+    }
+    const pct = config.scenario.stages[stage - 1];
+    size = stageNotionalUsd(sub.orderUsd, pct, config.risk.maxLeverage);
+    stageNote = `Stage ${stage}/${config.scenario.stages.length} (${pct}% of ${sub.orderUsd} USDC capital at ${config.risk.maxLeverage}x): `;
+  }
+  const orderUsd = Decimal.min(size, config.risk.maxOrderUsd);
   const pnl = await realizedPnlToday(db, hl, user.walletAddress, sub.id);
   if (pnl.lte(-config.risk.dailyLossLimitUsd)) {
     await db.insert(riskEvents).values({ userId: user.id, botId: bot.id, kind: "DAILY_LOSS_LIMIT", severity: "WARN", detail: { pnl: pnl.toFixed(2), limit: config.risk.dailyLossLimitUsd } });
@@ -263,7 +284,7 @@ async function moveToTarget(db: Db, hl: HlGateway, bot: Bot, config: BotConfig, 
   });
   return {
     status: "DONE",
-    reason: `${closedNote}Opened ${side.toLowerCase()} ${filled} ${coin} at ${entry.toString()}${recovered}; stop loss at ${stop.trigger}.`,
+    reason: `${closedNote}${stageNote}Opened ${side.toLowerCase()} ${filled} ${coin} at ${entry.toString()}${recovered}; stop loss at ${stop.trigger}.`,
     orderIds,
   };
 }
@@ -293,7 +314,7 @@ export async function recentSignals(db: Db, botId: string, network: "testnet" | 
 /** A subscriber's own recent executions for a bot. */
 export async function recentExecutions(db: Db, subscriptionId: string, limit = 10) {
   return db
-    .select({ e: botExecutions, action: botSignals.action, coin: botSignals.coin, source: botSignals.source })
+    .select({ e: botExecutions, action: botSignals.action, coin: botSignals.coin, source: botSignals.source, payload: botSignals.payload })
     .from(botExecutions)
     .innerJoin(botSignals, eq(botSignals.id, botExecutions.signalId))
     .where(eq(botExecutions.subscriptionId, subscriptionId))

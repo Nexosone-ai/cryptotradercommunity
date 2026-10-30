@@ -21,15 +21,20 @@ export const POST = handler(async (req: Request, ctx: RouteContext<"/api/bots/[i
   const { db, hl } = await apiContext();
   await rateLimit(db, `signal:${id}`, 30, 60_000);
   const parsed = webhookBodySchema.safeParse(await readJson(req));
-  if (!parsed.success) throw badRequest("INVALID_SIGNAL", 'Expected JSON like {"token":"…","action":"long|short|close","coin":"BTC"}.');
+  if (!parsed.success) throw badRequest("INVALID_SIGNAL", 'Expected JSON like {"token":"…","action":"long|short|close","coin":"BTC"} (plus "stage": 1–10 for staged bots).');
   const [bot] = await db.select().from(bots).where(eq(bots.id, id)).limit(1);
   // Same answer for an unknown bot and a wrong token.
   if (!bot || !webhookTokenMatches(parsed.data.token, bot.webhookSecretHash)) throw new ApiError(401, "INVALID_TOKEN", "Unknown bot or invalid token.");
-  if ((bot.config as BotConfig).executionMode !== "WEBHOOK_SIGNAL") throw new ApiError(409, "NOT_WEBHOOK_BOT", "This bot doesn't accept external signals.");
+  const config = bot.config as BotConfig;
+  if (config.executionMode !== "WEBHOOK_SIGNAL") throw new ApiError(409, "NOT_WEBHOOK_BOT", "This bot doesn't accept external signals.");
+  const stage = parsed.data.stage ?? null;
+  if (stage !== null && (!config.scenario || stage > config.scenario.stages.length)) {
+    throw badRequest("INVALID_STAGE", config.scenario ? `stage must be 1–${config.scenario.stages.length} for this bot.` : "This bot has no staged scenario, so signals can't name a stage.");
+  }
   const action = parseAction(parsed.data.action);
   if (!action) throw badRequest("INVALID_ACTION", "action must be one of long, short, close (or buy, sell, flat, exit).");
   const coin = normalizeCoin(parsed.data.coin);
-  const dedupeKey = parsed.data.id ? `id:${parsed.data.id}` : `${action}:${coin}:${Math.floor(Date.now() / 60_000)}`;
+  const dedupeKey = parsed.data.id ? `id:${parsed.data.id}` : `${action}:${coin}:${stage ? `s${stage}:` : ""}${Math.floor(Date.now() / 60_000)}`;
   const signal = await recordSignal(db, {
     botId: bot.id,
     network: hl.network,
@@ -37,7 +42,7 @@ export const POST = handler(async (req: Request, ctx: RouteContext<"/api/bots/[i
     action,
     coin,
     dedupeKey,
-    payload: { action: parsed.data.action, coin: parsed.data.coin, id: parsed.data.id ?? null },
+    payload: { action: parsed.data.action, coin: parsed.data.coin, id: parsed.data.id ?? null, stage },
   });
   if (!signal) {
     const existing = await findSignal(db, bot.id, hl.network, dedupeKey);
@@ -45,5 +50,5 @@ export const POST = handler(async (req: Request, ctx: RouteContext<"/api/bots/[i
   }
   const engine = engineAvailability();
   after(() => executeSignal(db, hl, signal.id));
-  return json({ signalId: signal.id, action, coin, engine: engine.enabled ? "on" : `off: ${engine.reason}` }, { status: 202 });
+  return json({ signalId: signal.id, action, coin, stage, engine: engine.enabled ? "on" : `off: ${engine.reason}` }, { status: 202 });
 });

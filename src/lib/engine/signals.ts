@@ -33,6 +33,12 @@ export function normalizeCoin(raw: string): string {
   return quote ? quote[1] : c;
 }
 
+/** The stage a webhook signal named, if any. */
+export function stageOf(payload: unknown): number | null {
+  const s = (payload as { stage?: unknown } | null)?.stage;
+  return typeof s === "number" && Number.isInteger(s) && s >= 1 ? s : null;
+}
+
 /** Body TradingView (or any client) POSTs to /api/bots/{id}/signal. TradingView can't set headers, so the token is in the body. */
 export const webhookBodySchema = z.object({
   token: z.string().min(20).max(200),
@@ -40,6 +46,8 @@ export const webhookBodySchema = z.object({
   coin: z.string().min(1).max(40),
   /** Optional idempotency key, e.g. "{{timenow}}". */
   id: z.string().max(100).optional(),
+  /** Staged-scenario bots: which stage this entry is (1-based). Number or numeric string (Pine Script alerts send text). */
+  stage: z.coerce.number().int().min(1).max(10).optional(),
 });
 
 export function newWebhookToken(): string {

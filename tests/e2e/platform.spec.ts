@@ -342,6 +342,46 @@ test("copy trading: the wizard pairs the Copy trading type with the copy executi
   await context.close();
 });
 
+test("staged scenario: a webhook bot's stages are entered in the wizard and shown with sizes and the worst case on the bot page", async ({ browser, baseURL }) => {
+  const { generatePrivateKey } = await import("viem/accounts");
+  const { page, context } = await walletPage(browser, generatePrivateKey());
+  await page.goto("/");
+  await signInViaUi(page);
+
+  await page.goto("/bots/register");
+  await page.getByRole("button", { name: /Execution & developer/ }).click();
+  await page.locator('select:has(option[value="WEBHOOK_SIGNAL"])').selectOption("WEBHOOK_SIGNAL");
+  const fields = page.getByTestId("scenario-fields");
+  await fields.getByRole("checkbox").check();
+  await fields.getByLabel("Margin per stage (% of capital, in order)").fill("10, 10, 10, 20, 20, 20");
+  await expect(page.getByTestId("scenario-preview")).toContainText("6 stages · 90% of capital in total");
+
+  const slug = `staged-${Date.now()}`;
+  const input = botInput(slug);
+  const res = await api(page.request, baseURL!).post("/api/bots", {
+    ...input,
+    strategyType: "CUSTOM",
+    executionMode: "WEBHOOK_SIGNAL",
+    direction: "LONG",
+    leverageMax: 5,
+    risk: { ...input.risk, maxLeverage: 5, stopLossPct: 4, maxOrderUsd: 1000, maxPositionUsd: 1000 },
+    scenario: {
+      stages: [10, 10, 10, 20, 20, 20],
+      entry: "Long BTC at the next hourly candle; re-enter at the next stage after a stop.",
+      takeProfit: "Close when the cycle net PnL reaches 20% of the margin used.",
+      afterLastStage: "Pause after the sixth stop loss until the operator reviews it.",
+    },
+  });
+  expect(res.status()).toBe(201);
+  await page.goto(`/bots/${slug}`);
+  const table = page.getByTestId("strategy-scenario");
+  await expect(table.locator("tbody tr")).toHaveCount(6);
+  await expect(table).toContainText("20% · 200.00"); // stage 4 at the 1000 USDC example
+  await expect(page.getByTestId("scenario-worst-case")).toContainText("about −180.00 USDC (18% of the capital)");
+  await expect(page.getByTestId("strategy-runs")).toContainText("in 6 stages");
+  await context.close();
+});
+
 test("docs state: no platform swap fee; each party is responsible for their swap", async ({ page }) => {
   await page.goto("/docs#swap");
   await expect(page.locator("#swap")).toContainText("The platform charges no fee for swaps.");

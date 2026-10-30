@@ -19,10 +19,14 @@ import { and, eq } from "drizzle-orm";
 import { getHlGateway } from "@/lib/hyperliquid/gateway";
 import { engineAvailability, recentExecutions, recentSignals } from "@/lib/engine/execute";
 import { subscriberReadiness } from "@/lib/engine/readiness";
+import { stageOf } from "@/lib/engine/signals";
+import { capitalRange } from "@/lib/bots/scenario";
+import { MIN_ORDER_USD } from "@/lib/engine/manage";
 import { TREND_TEMPLATE, usesTrendTemplate } from "@/lib/engine/trend";
 import { OwnerActions, PublishBanner, SubscribePanel } from "./BotActions";
 import { ReadinessList, TradeAmount, WebhookSetup } from "./EngineParts";
 import { PnlChart } from "./PnlChart";
+import { ScenarioCard } from "./Scenario";
 
 export const dynamic = "force-dynamic";
 
@@ -72,6 +76,8 @@ export default async function BotDetail({ params, searchParams }: PageProps<"/bo
   const webhookBot = config.executionMode === "WEBHOOK_SIGNAL";
   const trendBot = usesTrendTemplate(config);
   const copyBot = isCopyBot(config);
+  // Staged scenario: the stage of this subscriber's latest entry that opened a position.
+  const lastStage = executions.filter((x) => x.e.status === "DONE" && x.action !== "FLAT").map((x) => stageOf(x.payload)).find((n) => n !== null) ?? null;
   const source = await getBotSource(db, bot, viewer);
   const curve = fills
     .slice()
@@ -222,7 +228,9 @@ export default async function BotDetail({ params, searchParams }: PageProps<"/bo
                       )
                     : copyBot
                       ? t("The leader's own Hyperliquid positions, copied to each follower every minute.", "리더의 Hyperliquid 포지션을 매분 팔로워에게 복사합니다.")
-                      : webhookBot
+                      : webhookBot && config.scenario
+                        ? `Signals from the operator's own script (webhook), in ${config.scenario.stages.length} stages: each entry is sized by the stage it names (see Strategy scenario). The platform runs the orders, stop losses and risk limits but can't see or verify the strategy logic.`
+                        : webhookBot
                         ? t(
                             "Signals the operator sends from their own system (webhook). The platform runs the orders and risk limits but can't see or verify the strategy logic.",
                             "운영자가 자체 시스템에서 보내는 신호(Webhook). 플랫폼은 주문과 위험 한도를 실행하지만 전략 로직은 확인·검증할 수 없습니다.",
@@ -239,6 +247,8 @@ export default async function BotDetail({ params, searchParams }: PageProps<"/bo
               )}
             </p>
           </Card>
+
+          <ScenarioCard config={config} capital={sub && !isOwner ? sub.orderUsd : null} />
 
           {source ? (
             <Card>
@@ -309,6 +319,7 @@ export default async function BotDetail({ params, searchParams }: PageProps<"/bo
                 feeTenthsBp={bot.feeTenthsBp}
                 maxOrderUsd={config.risk.maxOrderUsd}
                 copy={copyBot}
+                capital={config.scenario ? capitalRange(config.scenario.stages, config.risk.maxLeverage, MIN_ORDER_USD, config.risk.maxOrderUsd) : null}
                 subscription={sub ? { status: sub.status, acceptedFeeTenthsBp: sub.acceptedFeeTenthsBp, pendingFeeTenthsBp: sub.pendingFeeTenthsBp } : null}
               />
             )}
@@ -319,8 +330,22 @@ export default async function BotDetail({ params, searchParams }: PageProps<"/bo
               <h2 className="mb-3 font-semibold">Bot trading for you</h2>
               <div className="space-y-4 text-sm">
                 <ReadinessList items={readiness} copy={copyBot} />
+                {config.scenario && (
+                  <p data-testid="current-stage">
+                    {lastStage
+                      ? `Last entry: stage ${lastStage} of ${config.scenario.stages.length} (${config.scenario.stages[lastStage - 1]}% of your capital as margin).`
+                      : `No entry yet; the next entry is the stage the operator's script names (1–${config.scenario.stages.length}).`}
+                  </p>
+                )}
                 {(sub.status === "ACTIVE" || sub.status === "REQUIRES_RECONSENT") && (
-                  <TradeAmount botId={bot.id} orderUsd={sub.orderUsd} maxOrderUsd={config.risk.maxOrderUsd} mainnet={cfg.isMainnet} copy={copyBot} />
+                  <TradeAmount
+                    botId={bot.id}
+                    orderUsd={sub.orderUsd}
+                    maxOrderUsd={config.risk.maxOrderUsd}
+                    mainnet={cfg.isMainnet}
+                    copy={copyBot}
+                    capital={config.scenario ? capitalRange(config.scenario.stages, config.risk.maxLeverage, MIN_ORDER_USD, config.risk.maxOrderUsd) : null}
+                  />
                 )}
                 <div>
                   <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Your recent bot activity</h3>
@@ -328,12 +353,13 @@ export default async function BotDetail({ params, searchParams }: PageProps<"/bo
                     <p className="text-muted">Nothing yet. Activity appears here when the bot sends a signal.</p>
                   ) : (
                     <ul className="space-y-2" data-testid="bot-executions">
-                      {executions.map(({ e, action, coin }) => (
+                      {executions.map(({ e, action, coin, payload }) => (
                         <li key={e.id} className="text-xs">
                           <span className="num text-muted">{dateTime(e.createdAt)}</span>{" "}
                           <Badge tone={e.status === "DONE" ? "up" : e.status === "FAILED" ? "down" : "neutral"}>{e.status}</Badge>{" "}
                           <b>
                             {action} {coin}
+                            {config.scenario && stageOf(payload) ? ` · stage ${stageOf(payload)}/${config.scenario.stages.length}` : ""}
                           </b>
                           {e.reason && <span className="block text-muted">{e.reason}</span>}
                         </li>
@@ -357,6 +383,7 @@ export default async function BotDetail({ params, searchParams }: PageProps<"/bo
                       signalUrl={new URL(`/api/bots/${bot.id}/signal`, cfg.appUrl).toString()}
                       hasToken={Boolean(bot.webhookSecretHash)}
                       coin={config.markets[0].replace(/-PERP$/, "")}
+                      stages={config.scenario?.stages.length ?? 0}
                     />
                   ) : (
                     <p className="text-muted">External signal webhook. Token set: {bot.webhookSecretHash ? "yes" : "no"}.</p>

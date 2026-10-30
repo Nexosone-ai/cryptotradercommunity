@@ -21,6 +21,13 @@ A signal names a **target position** (`LONG`, `SHORT` or `FLAT`) for one coin of
 - Without `id`, signals are deduplicated per action, coin and minute.
 - The endpoint answers `202` at once. Orders are placed after the response (`after()`, `maxDuration` 60s).
 
+**Staged scenario** (`config.scenario`, webhook bots only; `lib/bots/scenario.ts`)
+- For strategies whose script trades in stages, e.g. a sequential recovery strategy (10/10/10/20/20/20% of capital). The logic stays in the operator's Pine Script; the platform doesn't run or verify it.
+- The subscriber sets a **strategy capital** (stored in `order_usd`). Each entry signal adds `"stage": n`; the order is `capital × stages[n−1]% × max leverage` (USDC notional), capped at the bot's max order. An entry without a valid stage opens nothing; `close` needs no stage. Without `id`, the stage is part of the dedupe key.
+- The capital must keep every stage between 11 USDC and the bot's max order (`capitalRange`). Stages may use at most 100% of the capital in total.
+- The stop loss stays the bot's stop-loss % (a price move): at 5x a 4% stop is −20% of the stage's margin. Take profit, pauses and the stage order are the script's.
+- The bot page shows the scenario table (margin, position, loss if stopped, running total) at the subscriber's capital or an example, the worst case, and the operator's entry / take-profit / after-last-stage text. Subscribers see each entry's stage in their activity. Growing stages rate the bot HIGH risk (`STAGED_SCENARIO` finding).
+
 **Template**
 - Runs on the engine tick (every minute).
 - The dedupe key is the crossover candle, so each crossover acts once.

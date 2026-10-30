@@ -1,3 +1,4 @@
+import { isRecoverySizing, scenarioRows } from "./scenario";
 import type { BotConfig } from "./schema";
 import { bi } from "../i18n";
 
@@ -38,6 +39,15 @@ export function assessBotRisk(c: BotConfig, platformMaxFeeTenthsBp: number): { l
   if (c.risk.dailyLossLimitUsd > c.risk.maxPositionUsd) {
     warn("DAILY_LOSS_ABOVE_POSITION", bi("The daily loss limit is larger than the max position size.", "일일 손실 한도가 최대 포지션 규모보다 큽니다."));
   }
+  const recovery = Boolean(c.scenario && isRecoverySizing(c.scenario.stages));
+  if (c.scenario) {
+    const worst = scenarioRows(c.scenario.stages, 100, c.risk.maxLeverage, c.risk.stopLossPct).at(-1)!.cumulativeLoss;
+    warn(
+      "STAGED_SCENARIO",
+      `If every stage stops out, the loss is about ${+worst.toFixed(1)}% of the subscriber's strategy capital, plus fees and funding.` +
+        (recovery ? " Later stages are larger than earlier ones: positions grow after losses (recovery sizing)." : ""),
+    );
+  }
   if (c.strategyType === "MARTINGALE") warn("MARTINGALE", bi("Martingale strategies can grow positions rapidly during a losing streak.", "마틴게일 전략은 연속 손실 시 포지션이 급격히 커질 수 있습니다."));
   if (c.strategyType === "ARBITRAGE") {
     warn("ARBITRAGE_FEASIBILITY", bi("Arbitrage strategies are approved only after their feasibility (latency, fees) is verified.", "차익거래 전략은 실행 가능성(지연·수수료) 검증 후에만 승인됩니다."));
@@ -56,7 +66,7 @@ export function assessBotRisk(c: BotConfig, platformMaxFeeTenthsBp: number): { l
   const warns = findings.filter((f) => f.severity === "WARN").length;
   let level: RiskLevel = "LOW";
   if (c.risk.maxLeverage > 10 || warns >= 1) level = "MEDIUM";
-  if (c.risk.maxLeverage > 25 || c.strategyType === "MARTINGALE" || stopBeyondMargin || warns >= 3) level = "HIGH";
+  if (c.risk.maxLeverage > 25 || c.strategyType === "MARTINGALE" || recovery || stopBeyondMargin || warns >= 3) level = "HIGH";
   if (blocks > 0 || c.risk.maxLeverage > 40) level = "EXTREME";
   return { level, findings };
 }

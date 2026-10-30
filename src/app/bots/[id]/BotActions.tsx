@@ -35,6 +35,7 @@ export function SubscribePanel({
   feeTenthsBp,
   maxOrderUsd,
   copy = false,
+  capital = null,
   subscription,
 }: {
   botId: string;
@@ -43,13 +44,15 @@ export function SubscribePanel({
   maxOrderUsd: number;
   /** Copy-trading bot: the follower sets an allocation instead of an amount per trade. */
   copy?: boolean;
+  /** Staged-scenario bot: the subscriber sets a strategy capital within this range. */
+  capital?: { min: number; max: number } | null;
   subscription: { status: string; acceptedFeeTenthsBp: number; pendingFeeTenthsBp: number | null } | null;
 }) {
   const w = useWallet();
   const { t, L } = useI18n();
   const { busy, error, run } = useAction();
   const [accept, setAccept] = useState(false);
-  const [amount, setAmount] = useState(String(copy ? 100 : Math.min(100, maxOrderUsd)));
+  const [amount, setAmount] = useState(String(copy ? 100 : capital ? Math.min(Math.max(1000, capital.min), capital.max) : Math.min(100, maxOrderUsd)));
 
   if (!w.me?.user) {
     return (
@@ -118,7 +121,28 @@ export function SubscribePanel({
               </p>
             </div>
           )}
-          {!reconsent && !copy && (
+          {!reconsent && capital && (
+            <div>
+              <label className="block text-xs text-muted" htmlFor="subscribe-amount">
+                Strategy capital (USDC, {capital.min}–{capital.max})
+              </label>
+              <input
+                id="subscribe-amount"
+                type="number"
+                min={capital.min}
+                max={capital.max}
+                step={1}
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                className="num mt-1 w-full"
+              />
+              <p className="mt-1 text-xs text-faint">
+                The operator&apos;s script sends each entry with its stage; each stage uses its % of this capital as margin, with a stop loss. See Strategy
+                scenario for every stage&apos;s size and the worst case. Keep at least this much USDC in your Hyperliquid account.
+              </p>
+            </div>
+          )}
+          {!reconsent && !copy && !capital && (
             <div>
               <label className="block text-xs text-muted" htmlFor="subscribe-amount">
                 Amount per trade (USDC, max {maxOrderUsd})

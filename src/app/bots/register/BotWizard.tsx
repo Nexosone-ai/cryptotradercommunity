@@ -16,6 +16,7 @@ import {
 import { apiFetch, ClientApiError } from "@/lib/client-api";
 import { checksum, feeLabel } from "@/lib/format";
 import { bi } from "@/lib/i18n";
+import { scenarioRows } from "@/lib/bots/scenario";
 import type { SourceMeta } from "@/lib/bots/source";
 import { SourceEditor } from "./SourceEditor";
 
@@ -62,6 +63,7 @@ export function BotWizard({ ownerAddress, platformMaxFeeTenthsBp, editId, initia
   const [error, setError] = useState<string | null>(null);
   const [issues, setIssues] = useState<{ path: (string | number)[]; message: string }[]>([]);
   const [saved, setSaved] = useState<{ id: string; slug: string; status: string } | null>(null);
+  const [stagesText, setStagesText] = useState("");
 
   useEffect(() => {
     apiFetch<{ markets: { name: string }[] }>("/api/market/metadata")
@@ -81,6 +83,7 @@ export function BotWizard({ ownerAddress, platformMaxFeeTenthsBp, editId, initia
         delete (config as { source?: unknown }).source;
         const source = d.source?.code ? { language: d.source.meta.language, visibility: d.source.meta.visibility, code: d.source.code } : undefined;
         setF({ ...EMPTY, ...config, source, consents: { terms: false, risk: false, performancePolicy: false } });
+        setStagesText(config.scenario?.stages.join(", ") ?? "");
         setSaved({ id: d.bot.id, slug: d.bot.slug, status: d.bot.status });
       })
       .catch((e) => setError(e.message));
@@ -98,9 +101,16 @@ export function BotWizard({ ownerAddress, platformMaxFeeTenthsBp, editId, initia
     setF((p) => ({
       ...p,
       executionMode: m,
+      scenario: m === "WEBHOOK_SIGNAL" ? p.scenario : undefined,
       strategyType: m === "COPY_TRADE" ? "COPY_TRADING" : p.strategyType === "COPY_TRADING" ? "CUSTOM" : p.strategyType,
     }));
   const copyMode = f.executionMode === "COPY_TRADE";
+  // Staged scenario (webhook bots): stages are typed as "10, 10, 10, 20, 20, 20".
+  const scenario = f.scenario;
+  const setScenario = (patch: Partial<NonNullable<Form["scenario"]>> | null) =>
+    setF((p) => ({ ...p, scenario: patch === null ? undefined : { stages: [], entry: "", takeProfit: "", afterLastStage: "", ...p.scenario, ...patch } }));
+  const scenarioPreview =
+    scenario && scenario.stages.length > 0 ? scenarioRows(scenario.stages, 100, f.risk.maxLeverage, f.risk.stopLossPct).at(-1)!.cumulativeLoss : null;
   const setRisk = (k: keyof Form["risk"], v: number | boolean) => setF((p) => ({ ...p, risk: { ...p.risk, [k]: v } }));
   const issueFor = (prefix: string) => issues.filter((i) => i.path.join(".").startsWith(prefix)).map((i) => L(i.message));
 
@@ -345,6 +355,61 @@ export function BotWizard({ ownerAddress, platformMaxFeeTenthsBp, editId, initia
                 )}
               </p>
             </Field>
+            {f.executionMode === "WEBHOOK_SIGNAL" && (
+              <div className="space-y-3 rounded-xl border border-line p-4" data-testid="scenario-fields">
+                <label className="flex items-center gap-2 text-text">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(scenario)}
+                    onChange={(e) => {
+                      setScenario(e.target.checked ? {} : null);
+                      if (!e.target.checked) setStagesText("");
+                    }}
+                  />
+                  My script trades in stages (staged scenario, e.g. a sequential recovery strategy)
+                </label>
+                <p className="text-xs text-faint">
+                  Your Pine Script keeps the logic. Each entry alert adds <code>&quot;stage&quot;: n</code>, and the platform sizes it as that stage&apos;s % of
+                  the subscriber&apos;s strategy capital as margin, at your max leverage ({f.risk.maxLeverage}x), with your stop loss ({f.risk.stopLossPct}% price ={" "}
+                  {+(f.risk.stopLossPct * f.risk.maxLeverage).toFixed(1)}% of margin). Subscribers see the scenario on the bot page.
+                </p>
+                {scenario && (
+                  <>
+                    <Field label="Margin per stage (% of capital, in order)">
+                      <input
+                        value={stagesText}
+                        aria-label="Margin per stage (% of capital, in order)"
+                        placeholder="10, 10, 10, 20, 20, 20"
+                        onChange={(e) => {
+                          setStagesText(e.target.value);
+                          setScenario({ stages: e.target.value.split(/[,s]+/).filter(Boolean).map(Number) });
+                        }}
+                      />
+                      {err("scenario.stages")}
+                      {scenarioPreview && (
+                        <p className="mt-1 text-xs text-muted" data-testid="scenario-preview">
+                          {scenario.stages.length} stages · {scenario.stages.reduce((a, b) => a + b, 0)}% of capital in total · if every stage stops out: about −
+                          {+scenarioPreview.toFixed(1)}% of capital, plus fees and funding
+                        </p>
+                      )}
+                    </Field>
+                    <Field label="Entry (when your script enters)">
+                      <textarea rows={2} value={scenario.entry} onChange={(e) => setScenario({ entry: e.target.value })} placeholder="Long ETH at the next hourly candle; after a stop-loss exit, re-enter at the next stage." />
+                      {err("scenario.entry")}
+                    </Field>
+                    <Field label="Take profit">
+                      <textarea rows={2} value={scenario.takeProfit} onChange={(e) => setScenario({ takeProfit: e.target.value })} placeholder="Close when the cycle&apos;s net PnL reaches 20% of the margin used in the cycle; then start again at stage 1." />
+                      {err("scenario.takeProfit")}
+                    </Field>
+                    <Field label="After the last stage">
+                      <textarea rows={2} value={scenario.afterLastStage} onChange={(e) => setScenario({ afterLastStage: e.target.value })} placeholder="After the sixth stop loss the script pauses until the operator reviews it." />
+                      {err("scenario.afterLastStage")}
+                    </Field>
+                    {err("scenario")}
+                  </>
+                )}
+              </div>
+            )}
             <Field label={t("Developer bio", "개발자 소개")}>
               <textarea rows={3} value={f.developer.bio} onChange={(e) => set("developer", { ...f.developer, bio: e.target.value })} />
             </Field>

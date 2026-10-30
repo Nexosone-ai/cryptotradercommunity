@@ -468,3 +468,56 @@ describe("order safety: lost responses, partial closes, failed stops", () => {
     expect(await eventsOf("STOP_BEYOND_LIQUIDATION")).toHaveLength(1);
   });
 });
+
+describe("staged scenario (webhook bots whose script names the stage)", () => {
+  let db: Db;
+  let ex: Ex;
+  beforeEach(async () => {
+    db = await testDb();
+    ex = exchange();
+  });
+  const scenario = { stages: [10, 10, 10, 20, 20, 20], entry: "Long BTC at the next hourly candle.", takeProfit: "Cycle net PnL reaches 20% of margin used.", afterLastStage: "Pause after the sixth stop loss for review." };
+  const stagedBot = () =>
+    liveBot(db, {
+      direction: "LONG",
+      leverageMax: 5,
+      risk: { ...validBotInput().risk, maxLeverage: 5, stopLossPct: 4, maxOrderUsd: 1000, maxPositionUsd: 1000 },
+      scenario,
+    });
+  const staged = async (botId: string, action: TargetAction, stage?: number) => {
+    const s = await recordSignal(db, { botId, network: "testnet", source: "WEBHOOK", action, coin: "BTC", dedupeKey: `st${seq++}`, payload: { stage: stage ?? null } });
+    return (await executeSignal(db, ex.hl, s!.id))!;
+  };
+
+  it("sizes each entry from the subscriber's capital and the signal's stage; the stop is −20% of margin", async () => {
+    const { bot } = await stagedBot();
+    const { trader, sub } = await subscriber(db, ex, bot.id, 1000); // strategy capital
+    expect((await staged(bot.id, "LONG", 1)).summary).toMatchObject({ done: 1 });
+    // Stage 1: 10% of 1000 = 100 margin × 5x = 500 USDC → 0.00625 BTC; stop 4% below entry.
+    const [open, stop] = ex.hl.calls.map((c) => c.orders[0]);
+    expect(open).toMatchObject({ b: true, s: "0.00625", r: false });
+    expect(stop).toMatchObject({ s: "0.00625", r: true, t: { trigger: { triggerPx: "76800" } } });
+    expect((await executionsFor(db, sub.id))[0].reason).toContain("Stage 1/6 (10% of 1000 USDC capital at 5x)");
+
+    // The stop fires; the script enters stage 4 (20%): 1000 USDC → 0.0125 BTC.
+    ex.positions.get(trader.walletAddress.toLowerCase())!.set("BTC", new Decimal(0));
+    expect((await staged(bot.id, "LONG", 4)).summary).toMatchObject({ done: 1 });
+    expect(ex.hl.calls.at(-2)!.orders[0]).toMatchObject({ b: true, s: "0.0125", r: false });
+
+    // Take profit: close needs no stage.
+    expect((await staged(bot.id, "FLAT")).summary).toMatchObject({ done: 1 });
+    expect(await db.select().from(botPositions).where(eq(botPositions.subscriptionId, sub.id))).toHaveLength(0);
+  });
+
+  it("an entry without a valid stage opens nothing; capital must keep every stage within limits", async () => {
+    const { bot } = await stagedBot();
+    const { trader, sub } = await subscriber(db, ex, bot.id, 1000);
+    expect((await staged(bot.id, "LONG")).summary).toMatchObject({ skipped: 1 });
+    expect((await executionsFor(db, sub.id))[0].reason).toContain("no valid stage");
+    expect((await staged(bot.id, "LONG", 7)).summary).toMatchObject({ skipped: 1 });
+    expect(ex.hl.calls).toHaveLength(0);
+    await expect(setOrderUsd(db, trader, bot.id, "testnet", 21)).rejects.toMatchObject({ code: "CAPITAL_OUT_OF_RANGE" });
+    await expect(setOrderUsd(db, trader, bot.id, "testnet", 1001)).rejects.toMatchObject({ code: "CAPITAL_OUT_OF_RANGE" });
+    expect((await setOrderUsd(db, trader, bot.id, "testnet", 22)).orderUsd).toBe(22);
+  });
+});

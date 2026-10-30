@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { HL_MAX_PERP_BUILDER_FEE_TENTHS_BP } from "../config";
+import { scenarioSchema } from "./scenario";
 import { sourceInputSchema, type SourceMeta } from "./source";
 import { bi } from "../i18n";
 
@@ -54,6 +55,8 @@ export const botConfigSchema = z
       emergencyStop: z.literal(true, bi("Emergency stop (kill switch) support is required.", "긴급 중단(kill switch) 지원은 필수입니다.")),
     }),
     executionMode: z.enum(EXECUTION_MODES),
+    /** Optional staged scenario of a signal bot (sizes each signal by its stage; see lib/bots/scenario.ts). */
+    scenario: scenarioSchema.optional(),
     developer: z.object({
       bio: z.string().trim().max(1000).default(""),
       blogUrl: optionalUrl,
@@ -77,6 +80,14 @@ export const botConfigSchema = z
   .refine((c) => c.risk.maxOrderUsd <= c.risk.maxPositionUsd, {
     path: ["risk", "maxOrderUsd"],
     message: bi("The max order size must not exceed the max position size.", "1회 최대 주문은 최대 포지션 규모 이하여야 합니다."),
+  })
+  .refine((c) => !c.scenario || c.executionMode === "WEBHOOK_SIGNAL", {
+    path: ["scenario"],
+    message: "A staged scenario needs the execution mode External signal webhook: your script sends each signal with its stage.",
+  })
+  .refine((c) => !c.scenario || c.scenario.stages.reduce((a, b) => a + b, 0) <= 100, {
+    path: ["scenario", "stages"],
+    message: "The stages together can use at most 100% of the subscriber's capital as margin.",
   })
   .refine((c) => (c.strategyType === "COPY_TRADING") === (c.executionMode === "COPY_TRADE"), {
     path: ["executionMode"],

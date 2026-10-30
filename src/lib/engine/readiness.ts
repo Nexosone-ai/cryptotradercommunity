@@ -54,12 +54,19 @@ export async function subscriberReadiness(
           label: sub.orderUsd ? `Copy allocation: ${sub.orderUsd} USDC` : "Copy allocation set",
           hint: sub.orderUsd ? undefined : "Set how many USDC copy the leader (below).",
         }
-      : {
-          key: "amount",
-          ok: Boolean(sub.orderUsd),
-          label: sub.orderUsd ? `Amount per trade: ${Math.min(sub.orderUsd, config.risk.maxOrderUsd)} USDC` : "Amount per trade set",
-          hint: sub.orderUsd ? undefined : "Set how many USDC the bot opens per signal (below).",
-        },
+      : config.scenario
+        ? {
+            key: "amount",
+            ok: Boolean(sub.orderUsd),
+            label: sub.orderUsd ? `Strategy capital: ${sub.orderUsd} USDC` : "Strategy capital set",
+            hint: sub.orderUsd ? undefined : "Set the capital the staged scenario sizes its entries from (below).",
+          }
+        : {
+            key: "amount",
+            ok: Boolean(sub.orderUsd),
+            label: sub.orderUsd ? `Amount per trade: ${Math.min(sub.orderUsd, config.risk.maxOrderUsd)} USDC` : "Amount per trade set",
+            hint: sub.orderUsd ? undefined : "Set how many USDC the bot opens per signal (below).",
+          },
   ];
 
   const agent = await activeAgent(db, user.id, hl.network);
@@ -107,7 +114,8 @@ export async function subscriberReadiness(
     accountValue = null;
   }
   // Copy trading: the allocation is capital the copied positions use, so the account should hold at least that much.
-  const needed = copy ? new Decimal(sub.orderUsd ?? 1) : sub.orderUsd ? Decimal.min(sub.orderUsd, config.risk.maxOrderUsd).div(config.risk.maxLeverage) : new Decimal(1);
+  // Staged scenario: the strategy capital is what the stages are sized from, so the account should hold it.
+  const needed = copy || config.scenario ? new Decimal(sub.orderUsd ?? 1) : sub.orderUsd ? Decimal.min(sub.orderUsd, config.risk.maxOrderUsd).div(config.risk.maxLeverage) : new Decimal(1);
   items.push({
     key: "funds",
     ok: accountValue !== null && accountValue.gte(needed),
@@ -121,7 +129,9 @@ export async function subscriberReadiness(
             : "Get test USDC from the Hyperliquid testnet faucet (app.hyperliquid-testnet.xyz/drip)."
           : copy && accountValue.lt(needed)
             ? `Below your copy allocation (${needed.toFixed()} USDC): deposit more or lower the allocation, or copied trades may be rejected.`
-            : undefined,
+            : config.scenario && accountValue.lt(needed)
+              ? `Below your strategy capital (${needed.toFixed()} USDC): deposit more or lower the capital, or later stages may be rejected.`
+              : undefined,
   });
   return items;
 }
