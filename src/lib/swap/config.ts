@@ -15,6 +15,11 @@ export function getSwapConfig() {
   return { network: mainnetEnabled ? ("mainnet" as const) : ("testnet" as const), chains };
 }
 
+/** The swap page is open to users only with SWAP_OPEN=true; otherwise it shows "opening soon" (admins still see it). */
+export function swapOpen() {
+  return process.env.SWAP_OPEN === "true";
+}
+
 export function enabledSwapChain(chainId: number): SwapChain | undefined {
   return getSwapConfig().chains.find((c) => c.id === chainId);
 }

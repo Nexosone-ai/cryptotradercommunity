@@ -243,16 +243,28 @@ test("live Hyperliquid testnet market data is shown on /trade", async ({ page })
   await expect(page.getByText(/● Live/)).toBeVisible({ timeout: 30_000 });
 });
 
-test("swap page: 5 chains, locked until a contract is deployed, custom token added from chain metadata", async ({ browser, baseURL }) => {
+test("swap page: 'opening soon' for users until SWAP_OPEN; admins see 5 chains, locked until a contract is deployed; custom token added from chain metadata", async ({ browser, baseURL }) => {
   const anon = await browser.newPage();
   await anon.goto("/swap");
-  for (const name of ["Ethereum Sepolia", "BNB Smart Chain Testnet", "Polygon Amoy", "Base Sepolia", "Robinhood Chain Testnet"]) {
-    await expect(anon.getByRole("tab", { name: new RegExp(name) })).toBeVisible();
-  }
-  await expect(anon.getByRole("tab", { name: /BEP-20/ })).toBeVisible();
-  await expect(anon.getByText(/No swap contract has been deployed on this chain yet/)).toBeVisible();
+  await expect(anon.getByTestId("swap-coming-soon")).toContainText("P2P swap is opening soon");
+  await expect(anon.getByRole("tab", { name: /Ethereum Sepolia/ })).toHaveCount(0);
   await expect(anon.locator('header a[href="/swap"]')).toBeVisible();
   await anon.close();
+
+  const admin = await walletPage(browser, E2E_KEYS.admin);
+  await admin.page.goto("/");
+  await signInViaUi(admin.page);
+  await admin.page.goto("/swap");
+  await expect(admin.page.getByText(/only admins can see the swap below/)).toBeVisible();
+  for (const name of ["Ethereum Sepolia", "BNB Smart Chain Testnet", "Polygon Amoy", "Base Sepolia", "Robinhood Chain Testnet"]) {
+    await expect(admin.page.getByRole("tab", { name: new RegExp(name) })).toBeVisible();
+  }
+  await expect(admin.page.getByRole("tab", { name: /BEP-20/ })).toBeVisible();
+  await expect(admin.page.getByText(/No swap contract has been deployed on this chain yet/)).toBeVisible();
+  const notices = admin.page.getByTestId("swap-notices");
+  await expect(notices).toContainText("The platform charges no fee for swaps.");
+  await expect(notices).toContainText("Each party to a swap is solely responsible for it.");
+  await admin.context.close();
 
   // Signed-in user adds Circle's Sepolia USDC; symbol/decimals come from the chain.
   const { page, context } = await walletPage(browser, E2E_KEYS.trader);
@@ -276,11 +288,7 @@ test("swap page: 5 chains, locked until a contract is deployed, custom token add
   await context.close();
 });
 
-test("swap page and docs state: no platform swap fee; each party is responsible for their swap", async ({ page }) => {
-  await page.goto("/swap");
-  const notices = page.getByTestId("swap-notices");
-  await expect(notices).toContainText("The platform charges no fee for swaps.");
-  await expect(notices).toContainText("Each party to a swap is solely responsible for it.");
+test("docs state: no platform swap fee; each party is responsible for their swap", async ({ page }) => {
   await page.goto("/docs#swap");
   await expect(page.locator("#swap")).toContainText("The platform charges no fee for swaps.");
   await expect(page.locator("#swap")).toContainText("Each party to a swap is solely responsible for it.");
